@@ -1,0 +1,211 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "5:332593390095459654",
+      "lastPropertyId": "3:9007309411239632074",
+      "name": "KancolleBattleLogEntity",
+      "properties": [
+        {
+          "id": "1:8473222510133652970",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4739138604652193990",
+          "name": "timestamp",
+          "type": 6,
+          "flags": 8,
+          "indexId": "4:4508818424622429566"
+        },
+        {
+          "id": "3:9007309411239632074",
+          "name": "logStr",
+          "type": 9
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "6:6110568053115888254",
+      "lastPropertyId": "5:6519288307139870879",
+      "name": "KancolleQuestLogEntity",
+      "properties": [
+        {
+          "id": "1:3439133178905322795",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4976699114601546449",
+          "name": "timestamp",
+          "type": 6
+        },
+        {
+          "id": "3:2483954154650167990",
+          "name": "logStr",
+          "type": 9
+        },
+        {
+          "id": "5:6519288307139870879",
+          "name": "questId",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "7:3859673537722586893",
+      "lastPropertyId": "11:8796813211295983196",
+      "name": "KancolleResourceLogEntity",
+      "properties": [
+        {
+          "id": "1:4814528351800524599",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "3:1120400607845926749",
+          "name": "admiral",
+          "type": 9
+        },
+        {
+          "id": "4:5221755776782810681",
+          "name": "resource",
+          "type": 9
+        },
+        {
+          "id": "5:7815288733700171559",
+          "name": "open",
+          "type": 6
+        },
+        {
+          "id": "6:5241988756836256495",
+          "name": "close",
+          "type": 6
+        },
+        {
+          "id": "7:6225410188156323707",
+          "name": "high",
+          "type": 6
+        },
+        {
+          "id": "8:1392677676000915002",
+          "name": "low",
+          "type": 6
+        },
+        {
+          "id": "11:8796813211295983196",
+          "name": "time",
+          "type": 10
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "8:6521250304125153865",
+      "lastPropertyId": "6:7445058247862393741",
+      "name": "KancolleRouteLogEntity",
+      "properties": [
+        {
+          "id": "1:5021437788484089927",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "4:6957036542500726495",
+          "name": "mapId",
+          "type": 6
+        },
+        {
+          "id": "5:1668675836171338611",
+          "name": "formation",
+          "type": 6
+        },
+        {
+          "id": "6:7445058247862393741",
+          "name": "routeId",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "9:7792766552501196420",
+      "lastPropertyId": "5:3057652566560391113",
+      "name": "KancolleShipLogEntity",
+      "properties": [
+        {
+          "id": "1:7471191810277840944",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:40817348843234814",
+          "name": "dateTime",
+          "type": 10
+        },
+        {
+          "id": "3:3046172293587705074",
+          "name": "type",
+          "type": 6
+        },
+        {
+          "id": "4:5311033972126146351",
+          "name": "shipName",
+          "type": 9
+        },
+        {
+          "id": "5:3057652566560391113",
+          "name": "admiral",
+          "type": 9
+        }
+      ],
+      "relations": []
+    }
+  ],
+  "lastEntityId": "9:7792766552501196420",
+  "lastIndexId": "4:4508818424622429566",
+  "lastRelationId": "0:0",
+  "lastSequenceId": "0:0",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [
+    1508614591597237540,
+    5996430219067594460,
+    6545362025166684393,
+    2265894510803848721
+  ],
+  "retiredIndexUids": [],
+  "retiredPropertyUids": [
+    8669800097856037571,
+    8092361992863406638,
+    5663087944352517811,
+    7089112786032598661,
+    8838676858021161976,
+    2040447484525929018,
+    2272846159400304988,
+    4745953100383400084,
+    2874593659580026339,
+    1011897597590538300,
+    8044150685148489263,
+    7498166620387474385,
+    8484803732246975237,
+    5304015277603093750,
+    2791579880789739608,
+    177536317083007023,
+    5644596063745652955,
+    5950610992026708799,
+    699427031347203544,
+    916829750536472305
+  ],
+  "retiredRelationUids": [],
+  "version": 1
+}
