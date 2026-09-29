@@ -327,7 +327,7 @@ class WebController extends _$WebController {
   bool get iosFitted => useIOSFit && autoAdjusted;
 
   Future<void> onScreenResize() async {
-    if (iosFitted && inKancolle) {
+    if (iosFitted) {
       await controller.evaluateJavascript(source: "window.kancolleFit && window.kancolleFit()");
       return;
     }
@@ -405,9 +405,13 @@ class WebController extends _$WebController {
     await controller.zoomBy(zoomFactor: 0.1, animated: true);
   }
 
-  /// Reset zoom button: on iOS in game, always fit the game frame (never toggles it off)
+  /// Reset zoom button: on iOS with a game frame, always fit it (never toggles it off)
   Future<void> resetZoomAndFit() async {
-    if (!(useIOSFit && inKancolle)) {
+    // Check the page itself, the URL check misses play.games.dmm.com
+    final hasGameFrame = useIOSFit &&
+        await controller.evaluateJavascript(source:
+            "!!(document.getElementById('game_frame') || document.getElementById('htmlWrap') || document.getElementById('flashWrap'))") == true;
+    if (!hasGameFrame) {
       await resetZoom();
       return;
     }
