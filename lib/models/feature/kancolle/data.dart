@@ -28,6 +28,7 @@ import 'map_state.dart';
 import 'operation_queue.dart';
 import 'quest_assistant.dart';
 import 'raw_data.dart';
+import 'repair_timer.dart';
 import 'sea_force_base.dart';
 import 'ship.dart';
 import 'squad.dart';
@@ -59,6 +60,7 @@ class KancolleData {
   QuestAssistant? questAssistant;
   List<Squad>? battleSquads;
   Map<int, MapState>? mapStateMap;
+  final RepairTimerState repairTimer;
 
   KancolleData({
     required this.queue,
@@ -72,7 +74,8 @@ class KancolleData {
     this.questAssistant,
     this.battleSquads,
     this.mapStateMap,
-  });
+    RepairTimerState? repairTimer,
+  }) : repairTimer = repairTimer ?? RepairTimerState();
 
   KancolleData copyWith({
     OperationQueue? queue,
@@ -95,6 +98,7 @@ class KancolleData {
       questAssistant: questAssistant,
       battleSquads: battleSquads,
       mapStateMap: mapStateMap,
+      repairTimer: repairTimer,
     );
   }
 
@@ -211,6 +215,7 @@ class KancolleData {
           squads[squadIdx].ships[requestBody.apiShipIdx!] = ship;
         }
       }
+      repairTimer.onHenseiChange(squads[squadIdx], requestBody.apiShipId!);
     }
 
     if (model == null) {
@@ -409,6 +414,8 @@ class KancolleData {
         objectbox.battleLog.put(KancolleBattleLogEntity.fromLog(battleLog!));
       }
       battleLog = null; // reset battle log
+      final isLocalCache = source.startsWith("local");
+      if (!isLocalCache) repairTimer.evacuate(squads, fleet.ships);
       updateFleetShips(model.apiData.apiShip);
       fleet.combined = model.apiData.apiCombinedFlag;
 
@@ -421,6 +428,22 @@ class KancolleData {
         if (id > 1) {
           updateOperationQueue(data, id);
         }
+      }
+
+      repairTimer.ndockTime = {
+        for (final ship in model.apiData.apiShip) ship.apiId: ship.apiNdockTime
+      };
+      repairTimer.dockingShipIds = {
+        for (final dock in model.apiData.apiNdock)
+          if (dock.apiState == 1 && dock.apiShipId > 0) dock.apiShipId
+      };
+      if (!isLocalCache) {
+        repairTimer.onPort(squads, dataInfo.shipInfo);
+        notification.setRepairTimerNotification(
+          squads: squads,
+          repairTimer: repairTimer,
+          shipInfo: dataInfo.shipInfo,
+        );
       }
 
       cacheData(source, path, data);
@@ -591,7 +614,6 @@ class KancolleData {
   KancolleData parseWith(RawData rawData) {
     String source = rawData.source;
     String data = rawData.data;
-    String path = source.split("kcsapi").last;
     KancolleData newData = copyWith();
     try {
       if (_operationSource(source)) {

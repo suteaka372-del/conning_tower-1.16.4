@@ -21,6 +21,10 @@ import 'package:pull_down_button/pull_down_button.dart';
 import '../../models/data/l10n/kancolle_localization.dart';
 import '../../providers/generatable/kancolle_event_ship_tags_provider.dart';
 import '../../providers/generatable/kancolle_localization_provider.dart';
+import '../../models/data/kcsapi/start2/get_data_entity.dart';
+import '../../models/feature/kancolle/squad.dart';
+import '../../widgets/kancolle_attack_rate_section.dart';
+import '../../widgets/kancolle_repair_timer_section.dart';
 import '../../widgets/kancolle_squad_slot_info.dart';
 
 const _sectionMargin = EdgeInsetsDirectional.fromSTEB(0.0, 10.0, 10.0, 10.0);
@@ -242,6 +246,8 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                                         squadName:
                                                             squads[index]
                                                                 .name,
+                                                        squad: squad,
+                                                        shipInfo: shipInfo,
                                                       ));
                                                 },
                                                 additionalInfo: SizedBox(
@@ -318,6 +324,11 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                                   .toList(),
                                             ),
                                           ],
+                                        ),
+                                        KancolleRepairTimerSection(
+                                          squad: squad,
+                                          repairTimer: data.repairTimer,
+                                          shipInfo: shipInfo,
                                         ),
                                         CupertinoListSection.insetGrouped(
                                           margin: tabBottomListMargin,
@@ -474,10 +485,14 @@ class ShipInfo extends StatelessWidget {
     super.key,
     required this.ship,
     required this.squadName,
+    this.squad,
+    this.shipInfo,
   });
 
   final Ship ship;
   final String squadName;
+  final Squad? squad;
+  final Map<int, GetDataApiDataApiMstShipEntity>? shipInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -491,6 +506,12 @@ class ShipInfo extends StatelessWidget {
       ),
       child: ScrollViewWithCupertinoScrollbar(
         children: [
+          if (squad != null)
+            KancolleAttackRateSection(
+              ship: ship,
+              squad: squad!,
+              shipInfo: shipInfo,
+            ),
           CupertinoListSection.insetGrouped(
             margin: tabBottomListMargin,
             children: [
@@ -571,7 +592,7 @@ class ShipInfo extends StatelessWidget {
                 },
               ),
             ],
-          )
+          ),
         ],
       ),
     );

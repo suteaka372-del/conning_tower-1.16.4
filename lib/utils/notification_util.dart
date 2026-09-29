@@ -2,7 +2,10 @@ import 'dart:io';
 
 import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/generated/l10n.dart';
+import 'package:conning_tower/models/data/kcsapi/start2/get_data_entity.dart';
 import 'package:conning_tower/models/feature/kancolle/operation_queue.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/models/feature/kancolle/squad.dart';
 import 'package:conning_tower/models/feature/task.dart';
 import 'package:conning_tower/utils/toast.dart';
 import 'package:flutter/foundation.dart';
@@ -199,6 +202,56 @@ class NotificationUtil {
     }
   }
 
+  static const int _kAnchorageRepairNotificationId = 9990001;
+  static const int _kConditionRepairNotificationId = 9990002;
+
+  /// Reschedule anchorage repair (20 min) / Nosaki (15 min) notifications, called on every port
+  Future<void> setRepairTimerNotification({
+    required List<Squad> squads,
+    required RepairTimerState repairTimer,
+    required Map<int, GetDataApiDataApiMstShipEntity>? shipInfo,
+  }) async {
+    try {
+      await flutterLocalNotificationsPlugin.cancel(_kAnchorageRepairNotificationId);
+      await flutterLocalNotificationsPlugin.cancel(_kConditionRepairNotificationId);
+
+      var notificationDetails = const NotificationDetails(
+        android: AndroidNotificationDetails(
+          kTaskChannelId,
+          kTaskChannelName,
+          channelDescription: kTaskChannelDescription,
+        ),
+      );
+
+      final anchorageTimer = repairTimer.anchorageRepairTimer;
+      if (anchorageTimer != null && squads.any(repairTimer.canAnchorageRepair)) {
+        final time = tz.TZDateTime.from(anchorageTimer.add(kAnchorageRepairSpan), tz.local);
+        if (time.isAfter(tz.TZDateTime.now(tz.local))) {
+          await zonedScheduleAlarmClockNotification(
+              _kAnchorageRepairNotificationId,
+              repairText("泊地修理: 20分経過しました", "Anchorage repair: 20 minutes passed"),
+              repairText("母港に戻ると回復します", "Return to port to apply the repair"),
+              time,
+              notificationDetails);
+        }
+      }
+
+      final conditionTimer = repairTimer.conditionRepairTimer;
+      if (conditionTimer != null && squads.any((squad) => repairTimer.canConditionRepair(squad, shipInfo))) {
+        final time = tz.TZDateTime.from(conditionTimer.add(kConditionRepairSpan), tz.local);
+        if (time.isAfter(tz.TZDateTime.now(tz.local))) {
+          await zonedScheduleAlarmClockNotification(
+              _kConditionRepairNotificationId,
+              repairText("給糧艦(野埼): 15分経過しました", "Nosaki: 15 minutes passed"),
+              repairText("母港に戻るとコンディションが回復します", "Return to port to recover condition"),
+              time,
+              notificationDetails);
+        }
+      }
+    } catch (e) {
+      debugPrint("setRepairTimerNotification failed: $e");
+    }
+  }
 }
 
 NotificationUtil notification = NotificationUtil();
