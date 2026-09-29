@@ -282,10 +282,10 @@ class _ControlsState extends ConsumerState<Controls> {
         controller.scrollBy(x: 0, y: 1);
         break;
       case ConFunc.goBack:
-        _onGoBack(controller);
+        _onGoBack(context, controller);
         break;
       case ConFunc.goForward:
-        _onGoForward(controller);
+        _onGoForward(context, controller);
         break;
       case ConFunc.refresh:
         _onReload(context, controller);
@@ -329,10 +329,10 @@ class _ControlsState extends ConsumerState<Controls> {
         controller.scrollBy(x: 0, y: 1);
         break;
       case ConFunc.goBack:
-        _onGoBack(controller);
+        _onGoBack(context, controller);
         break;
       case ConFunc.goForward:
-        _onGoForward(controller);
+        _onGoForward(context, controller);
         break;
       case ConFunc.refresh:
         _onReload(context, controller);
@@ -368,20 +368,32 @@ class _ControlsState extends ConsumerState<Controls> {
     }
   }
 
-  Future<void> _onGoBack(InAppWebViewController controller) async {
-    if (!_isInit) return;
-    safeNavi = true;
-    if (await controller.canGoBack()) {
-      await controller.goBack();
-    }
+  Future<bool> _confirm(BuildContext context, String msg) async {
+    bool? value = await showDialog(
+        barrierDismissible: false,
+        context: context,
+        builder: (context) {
+          return AdaptiveDialogWithBool(msg: msg);
+        });
+    return value ?? false;
   }
 
-  Future<void> _onGoForward(InAppWebViewController controller) async {
+  Future<void> _onGoBack(
+      BuildContext context, InAppWebViewController controller) async {
     if (!_isInit) return;
+    if (!await controller.canGoBack()) return;
+    if (!context.mounted || !await _confirm(context, S.current.AppBack)) return;
     safeNavi = true;
-    if (await controller.canGoForward()) {
-      await controller.goForward();
-    }
+    await controller.goBack();
+  }
+
+  Future<void> _onGoForward(
+      BuildContext context, InAppWebViewController controller) async {
+    if (!_isInit) return;
+    if (!await controller.canGoForward()) return;
+    if (!context.mounted || !await _confirm(context, S.current.AppForward)) return;
+    safeNavi = true;
+    await controller.goForward();
   }
 
   Future<void> _onLoadHome(

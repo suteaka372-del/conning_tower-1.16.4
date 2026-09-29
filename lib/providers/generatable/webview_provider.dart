@@ -405,6 +405,19 @@ class WebController extends _$WebController {
     await controller.zoomBy(zoomFactor: 0.1, animated: true);
   }
 
+  /// Reset zoom button: on iOS in game, always fit the game frame (never toggles it off)
+  Future<void> resetZoomAndFit() async {
+    if (!(useIOSFit && inKancolle)) {
+      await resetZoom();
+      return;
+    }
+    if (autoAdjusted) {
+      await windowAlign(needToast: true);
+    } else {
+      await adjustWindow();
+    }
+  }
+
   // zoomIn is not implemented on iOS
   Future<void> zoomIn() async {
     await controller.zoomIn();

@@ -84,7 +84,7 @@ class _WebInfoState extends ConsumerState<WebInfoPage> {
                                 CupertinoIcons.arrow_down_right_arrow_up_left),
                         onTap: () async {
                           HapticFeedback.mediumImpact();
-                          await ref.read(webControllerProvider).resetZoom();
+                          await ref.read(webControllerProvider).resetZoomAndFit();
                         },
                       ),
                       CupertinoListTile(
