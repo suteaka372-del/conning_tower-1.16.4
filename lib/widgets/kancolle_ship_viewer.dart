@@ -2,13 +2,17 @@ import 'dart:developer';
 
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/models/feature/kancolle/data.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
+import 'package:conning_tower/models/feature/kancolle/ship_filter.dart';
+import 'package:conning_tower/widgets/kancolle_ship_filter_editor.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:pull_down_button/pull_down_button.dart';
 
 // const _sectionMargin = EdgeInsetsDirectional.fromSTEB(5.0, 5.0, 10.0, 10.0);
@@ -64,6 +68,164 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
   Map<String, List<int>> shipTypeMap = {S.current.TextAll: []};
 
   List<String> selectedShipType = [S.current.TextAll];
+
+  /// 保存済みフィルター (EO のグループ相当)
+  List<ShipFilterPreset> presets = [];
+
+  ShipFilterPreset? activePreset;
+
+  @override
+  void initState() {
+    super.initState();
+    ShipFilterStore.load().then((value) {
+      if (mounted) setState(() => presets = value);
+    }).catchError((e) {
+      log("load ship filter presets failed: $e");
+    });
+  }
+
+  Map<String, List<int>> get _shipTypeOptions =>
+      Map.fromEntries(shipTypeMap.entries.where((e) => e.key != S.current.TextAll));
+
+  Future<void> _savePresets() async {
+    try {
+      await ShipFilterStore.save(presets);
+    } catch (e) {
+      log("save ship filter presets failed: $e");
+    }
+  }
+
+  Future<void> _createPreset() async {
+    final preset = await navigatorToFilterEditor(null);
+    if (preset == null) return;
+    setState(() {
+      presets = [...presets, preset];
+      activePreset = preset;
+    });
+    await _savePresets();
+  }
+
+  Future<void> _editPreset(ShipFilterPreset target) async {
+    final preset = await navigatorToFilterEditor(target);
+    if (preset == null) return;
+    setState(() {
+      presets = [for (final p in presets) identical(p, target) ? preset : p];
+      if (identical(activePreset, target)) activePreset = preset;
+    });
+    await _savePresets();
+  }
+
+  Future<void> _deletePreset(ShipFilterPreset target) async {
+    setState(() {
+      presets = presets.where((p) => !identical(p, target)).toList();
+      if (identical(activePreset, target)) activePreset = null;
+    });
+    await _savePresets();
+  }
+
+  Future<ShipFilterPreset?> navigatorToFilterEditor(ShipFilterPreset? initial) {
+    return Navigator.of(context).push<ShipFilterPreset>(CupertinoPageRoute(
+      builder: (_) => KancolleShipFilterEditor(initial: initial, shipTypeOptions: _shipTypeOptions),
+    ));
+  }
+
+  Future<void> _showPresetMenu(ShipFilterPreset preset) async {
+    HapticFeedback.mediumImpact();
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => PointerInterceptor(
+        child: CupertinoActionSheet(
+          title: Text(preset.name),
+          actions: [
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                _editPreset(preset);
+              },
+              child: Text(repairText('編集', 'Edit')),
+            ),
+            CupertinoActionSheetAction(
+              isDestructiveAction: true,
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                _deletePreset(preset);
+              },
+              child: Text(repairText('削除', 'Delete')),
+            ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.of(sheetContext).pop(),
+            child: Text(repairText('キャンセル', 'Cancel')),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildPresetBar() {
+    Widget chip(String title, bool selected, VoidCallback onPressed, {VoidCallback? onLongPress}) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8.0),
+        child: GestureDetector(
+          onLongPress: onLongPress,
+          child: selected
+              ? CupertinoButton.filled(
+                  sizeStyle: CupertinoButtonSize.small,
+                  onPressed: onPressed,
+                  child: Text(title),
+                )
+              : CupertinoButton.tinted(
+                  sizeStyle: CupertinoButtonSize.small,
+                  onPressed: onPressed,
+                  child: Text(title),
+                ),
+        ),
+      );
+    }
+
+    final preset = activePreset;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 15.0, top: 8.0),
+            child: Row(
+              children: [
+                chip(repairText('フィルターなし', 'No filter'), preset == null,
+                    () => setState(() => activePreset = null)),
+                for (final p in presets)
+                  chip(p.name, identical(p, preset), () {
+                    HapticFeedback.lightImpact();
+                    setState(() => activePreset = identical(p, preset) ? null : p);
+                  }, onLongPress: () => _showPresetMenu(p)),
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  onPressed: _createPreset,
+                  child: const Icon(CupertinoIcons.add),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (preset != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 15.0, top: 4.0, right: 15.0),
+            child: Text(
+              [
+                ...preset.conditions.map((c) => c.text),
+                repairText('並び替え: ${preset.sortStat.label} ${preset.descending ? "降順" : "昇順"}',
+                    'Sort: ${preset.sortStat.label} ${preset.descending ? "desc" : "asc"}'),
+                repairText('長押しで編集・削除', 'Long press to edit'),
+              ].join(' / '),
+              style: TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
+            ),
+          ),
+      ],
+    );
+  }
 
   String get _shipTypeTitle {
     final shipTypeTitle = S.current.KCDashboardShipViewerFilterShipType;
@@ -200,6 +362,7 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
       child: SafeArea(
         child: Column(
           children: [
+            buildPresetBar(),
             buildFiltersWidget(),
             Expanded(
               child: ScrollViewWithCupertinoScrollbar(
@@ -233,7 +396,16 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
                                 ),
                                 subtitle: Padding(
                                   padding: const EdgeInsets.only(right: 8.0),
-                                  child: Row(
+                                  child: activePreset != null
+                                      ? Wrap(
+                                          spacing: 12,
+                                          children: [
+                                            Text('ID:${ship.uid}'),
+                                            for (final stat in activePreset!.displayStats)
+                                              Text('${stat.label}:${stat.valueOf(ship)}'),
+                                          ],
+                                        )
+                                      : Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
                                     children: [
@@ -426,6 +598,10 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
             .toList(),
         ShipSpeed.all => filterShips,
       };
+    }
+    final preset = activePreset;
+    if (preset != null) {
+      filterShips = preset.apply(filterShips);
     }
     return filterShips;
   }
