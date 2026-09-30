@@ -14,6 +14,7 @@ import 'squad.dart';
 const int _kShipTypeRepairShip = 19; // 工作艦
 const int _kEquipTypeRepairFacility = 31; // 艦艇修理施設
 const Set<int> _kNosakiIds = {996, 1002}; // 野埼
+const Set<int> _kRepairShipIds = {182, 187, 953, 958}; // 明石, 明石改, 朝日, 朝日改
 
 const Duration kAnchorageRepairSpan = Duration(minutes: 20);
 const Duration kConditionRepairSpan = Duration(minutes: 15);
@@ -71,7 +72,10 @@ class RepairTimerState {
           .where((e) => e.type != null && e.type!.length > 2 && e.type![2] == _kEquipTypeRepairFacility)
           .length;
 
-  static bool _isRepairShip(Ship? ship) => ship?.shipType == _kShipTypeRepairShip;
+  static bool _isRepairShip(Ship? ship) =>
+      ship != null && (ship.shipType == _kShipTypeRepairShip || _kRepairShipIds.contains(ship.shipId));
+
+  static bool hasRepairShipFlagship(Squad squad) => squad.ships.isNotEmpty && _isRepairShip(squad.ships.first);
 
   static bool _isOnExpedition(Squad squad) => (squad.operation ?? 0) != 0;
 
@@ -118,6 +122,34 @@ class RepairTimerState {
       final rate = _hpRate(ship);
       return !isDocking(ship) && 0.5 < rate && rate < 1.0;
     });
+  }
+
+  /// 旗艦が工作艦なのに泊地修理が発動しない理由 (発動可能、または旗艦が工作艦でなければ null)
+  String? anchorageRepairBlockedReason(Squad squad) {
+    if (!hasRepairShipFlagship(squad)) return null;
+    final flagship = squad.ships.first;
+    if (!(_hpRate(flagship) > 0.5)) return repairText('旗艦が中破以上のため停止中', 'Flagship is too damaged');
+    if (isDocking(flagship)) return repairText('旗艦が入渠中のため停止中', 'Flagship is in the repair dock');
+    if (_isOnExpedition(squad)) return repairText('遠征中のため停止中', 'Fleet is on expedition');
+    if (anchorageRepairBound(squad) < 1) {
+      return repairText('この編成では修理できません (朝日改は艦艇修理施設が必要)',
+          'Cannot repair with this fleet (Asahi Kai needs a repair facility)');
+    }
+    if (!canAnchorageRepair(squad)) {
+      return repairText('修理対象の艦なし (HP50%超〜100%未満が対象)', 'No ship to repair (HP 50-100%)');
+    }
+    return null;
+  }
+
+  /// 野埼がいるのに母港給糧艦システムが発動しない理由
+  String? conditionRepairBlockedReason(Squad squad, Map<int, GetDataApiDataApiMstShipEntity>? shipInfo) {
+    if (!hasNosaki(squad)) return null;
+    if (_isOnExpedition(squad)) return repairText('遠征中のため停止中', 'Fleet is on expedition');
+    if (!canConditionRepair(squad, shipInfo)) {
+      return repairText('野埼の条件未達 (HP50%超・cond30超・補給済み・未入渠)',
+          'Nosaki conditions not met (HP>50%, cond>30, supplied, not docked)');
+    }
+    return null;
   }
 
   static bool hasNosaki(Squad squad) =>

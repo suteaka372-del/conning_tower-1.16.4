@@ -55,70 +55,89 @@ class _KancolleRepairTimerSectionState extends State<KancolleRepairTimerSection>
     final now = DateTime.now();
     final children = <Widget>[];
 
-    final info = repairTimer.anchorageRepairInfo(squad);
-    final anchorageTimer = repairTimer.anchorageRepairTimer;
-    if (info != null && anchorageTimer != null) {
-      final elapsed = now.difference(anchorageTimer);
-      final ready = elapsed >= kAnchorageRepairSpan;
+    final notStarted = repairText('母港に戻ると計測を開始します', 'Starts when you return to port');
+
+    // 泊地修理: 旗艦が工作艦なら常に表示
+    if (RepairTimerState.hasRepairShipFlagship(squad)) {
+      final info = repairTimer.anchorageRepairInfo(squad);
+      final reason = repairTimer.anchorageRepairBlockedReason(squad);
+      final anchorageTimer = repairTimer.anchorageRepairTimer;
+      final elapsed = anchorageTimer == null ? null : now.difference(anchorageTimer);
+      final ready = elapsed != null && elapsed >= kAnchorageRepairSpan;
+      String subtitle;
+      if (reason != null) {
+        subtitle = reason;
+      } else if (anchorageTimer == null) {
+        subtitle = notStarted;
+      } else {
+        subtitle = repairText(
+            '対象 ${info!.bound}隻${info.is1st2ndRepairShip ? ' / 時間×0.85' : ''}',
+            'Targets: ${info.bound}${info.is1st2ndRepairShip ? ' / time x0.85' : ''}');
+      }
       children.add(CupertinoListTile(
         leading: const Icon(CupertinoIcons.wrench),
         title: Text(repairText('泊地修理', 'Anchorage repair')),
-        subtitle: Text(repairText(
-            '対象 ${info.bound}隻${info.is1st2ndRepairShip ? ' / 時間×0.85' : ''}',
-            'Targets: ${info.bound}${info.is1st2ndRepairShip ? ' / time x0.85' : ''}')),
+        subtitle: Text(subtitle, maxLines: 2),
         additionalInfo: Text(
-          '${repairText('経過', 'Elapsed')} ${_format(elapsed)}',
-          style: ready ? const TextStyle(color: CupertinoColors.activeGreen) : null,
+          elapsed == null ? '--:--' : '${repairText('経過', 'Elapsed')} ${_format(elapsed)}',
+          style: ready && reason == null ? const TextStyle(color: CupertinoColors.activeGreen) : null,
         ),
       ));
-      if (info.targets.isEmpty) {
-        children.add(CupertinoListTile(
-          title: Text(repairText('修理が必要な対象艦なし', 'No ship needs repair')),
-        ));
-      }
-      for (final target in info.targets) {
-        final ship = target.ship;
-        String detail;
-        if (!target.eligible) {
-          detail = repairText('中破以上のため対象外', 'Too damaged');
-        } else if (target.dockingSeconds <= 0) {
-          detail = '--';
-        } else {
-          final heal = ready
-              ? RepairTimerState.healAmount(
-                  target.damage, target.dockingSeconds, elapsed, info.is1st2ndRepairShip)
-              : 0;
-          if (heal >= target.damage) {
-            detail = repairText('+$heal 全快', '+$heal full');
+      if (info != null && anchorageTimer != null && elapsed != null) {
+        for (final target in info.targets) {
+          final ship = target.ship;
+          String detail;
+          if (!target.eligible) {
+            detail = repairText('中破以上のため対象外', 'Too damaged');
+          } else if (target.dockingSeconds <= 0) {
+            detail = '--';
           } else {
-            final next = anchorageTimer.add(RepairTimerState.repairTime(
-                target.damage, target.dockingSeconds, heal + 1, info.is1st2ndRepairShip));
-            detail = repairText('+$heal (+1まで ${_format(next.difference(now))})',
-                '+$heal (+1 in ${_format(next.difference(now))})');
+            final heal = ready
+                ? RepairTimerState.healAmount(
+                    target.damage, target.dockingSeconds, elapsed, info.is1st2ndRepairShip)
+                : 0;
+            if (heal >= target.damage) {
+              detail = repairText('+$heal 全快', '+$heal full');
+            } else {
+              final next = anchorageTimer.add(RepairTimerState.repairTime(
+                  target.damage, target.dockingSeconds, heal + 1, info.is1st2ndRepairShip));
+              detail = repairText('+$heal (+1まで ${_format(next.difference(now))})',
+                  '+$heal (+1 in ${_format(next.difference(now))})');
+            }
           }
+          children.add(CupertinoListTile(
+            title: Text('#${target.index + 1} ${ship.name ?? ''}'),
+            subtitle: Text('HP ${ship.nowHP}/${ship.maxHP}'),
+            additionalInfo: Text(detail),
+          ));
         }
-        children.add(CupertinoListTile(
-          title: Text('#${target.index + 1} ${ship.name ?? ''}'),
-          subtitle: Text('HP ${ship.nowHP}/${ship.maxHP}'),
-          additionalInfo: Text(detail),
-        ));
       }
     }
 
-    final conditionTimer = repairTimer.conditionRepairTimer;
-    if (conditionTimer != null && repairTimer.canConditionRepair(squad, widget.shipInfo)) {
-      final elapsed = now.difference(conditionTimer);
-      final ready = elapsed >= kConditionRepairSpan;
+    // 給糧艦(野埼): 旗艦か2番艦にいれば常に表示
+    if (RepairTimerState.hasNosaki(squad)) {
+      final reason = repairTimer.conditionRepairBlockedReason(squad, widget.shipInfo);
+      final conditionTimer = repairTimer.conditionRepairTimer;
+      final elapsed = conditionTimer == null ? null : now.difference(conditionTimer);
+      final ready = elapsed != null && elapsed >= kConditionRepairSpan;
+      String subtitle;
+      if (reason != null) {
+        subtitle = reason;
+      } else if (conditionTimer == null) {
+        subtitle = notStarted;
+      } else if (ready) {
+        subtitle = repairText('母港に戻ると回復', 'Return to port to recover');
+      } else {
+        final remain = _format(conditionTimer.add(kConditionRepairSpan).difference(now));
+        subtitle = repairText('回復まで $remain', 'Recover in $remain');
+      }
       children.add(CupertinoListTile(
         leading: const Icon(CupertinoIcons.cart),
         title: Text(repairText('給糧艦(野埼)', 'Nosaki')),
-        subtitle: Text(ready
-            ? repairText('母港に戻ると回復', 'Return to port to recover')
-            : repairText('回復まで ${_format(conditionTimer.add(kConditionRepairSpan).difference(now))}',
-                'Recover in ${_format(conditionTimer.add(kConditionRepairSpan).difference(now))}')),
+        subtitle: Text(subtitle, maxLines: 2),
         additionalInfo: Text(
-          '${repairText('経過', 'Elapsed')} ${_format(elapsed)}',
-          style: ready ? const TextStyle(color: CupertinoColors.activeGreen) : null,
+          elapsed == null ? '--:--' : '${repairText('経過', 'Elapsed')} ${_format(elapsed)}',
+          style: ready && reason == null ? const TextStyle(color: CupertinoColors.activeGreen) : null,
         ),
       ));
     }

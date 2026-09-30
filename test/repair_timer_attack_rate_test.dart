@@ -239,5 +239,47 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
     });
+
+    testWidgets('repair ship flagship is always shown with the reason', (tester) async {
+      final squad = Squad(id: 1, name: 'fleet', ships: [
+        _ship(1, 958, shipType: 19, equipment: [_repairFacility]),
+        _ship(2, 100),
+      ]);
+      final state = RepairTimerState();
+      expect(state.anchorageRepairBlockedReason(squad), isNotNull);
+
+      await tester.pumpWidget(CupertinoApp(
+        home: CupertinoPageScaffold(
+          child: ListView(children: [
+            KancolleRepairTimerSection(squad: squad, repairTimer: state, shipInfo: null),
+          ]),
+        ),
+      ));
+      expect(find.byIcon(CupertinoIcons.wrench), findsOneWidget);
+      expect(find.text('--:--'), findsOneWidget);
+      expect(find.text(state.anchorageRepairBlockedReason(squad)!), findsOneWidget);
+
+      // Not a repair ship flagship: nothing is shown
+      await tester.pumpWidget(CupertinoApp(
+        home: CupertinoPageScaffold(
+          child: ListView(children: [
+            KancolleRepairTimerSection(
+                squad: Squad(id: 1, name: 'fleet', ships: [_ship(2, 100)]), repairTimer: state, shipInfo: null),
+          ]),
+        ),
+      ));
+      expect(find.byIcon(CupertinoIcons.wrench), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  test('repair ship detected by ship id when ship type is missing', () {
+    final squad = Squad(id: 1, name: 'fleet', ships: [
+      Ship(uid: 1, shipId: 187, level: 1, nowHP: 40, maxHP: 40),
+      _ship(2, 100, nowHP: 30),
+    ]);
+    expect(RepairTimerState.hasRepairShipFlagship(squad), isTrue);
+    expect(RepairTimerState().canAnchorageRepair(squad), isTrue);
   });
 }
