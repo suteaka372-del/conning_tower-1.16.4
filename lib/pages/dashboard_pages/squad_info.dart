@@ -14,7 +14,6 @@ import 'package:conning_tower/widgets/squads_share_button.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:percent_indicator/circular_percent_indicator.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'package:pull_down_button/pull_down_button.dart';
 
@@ -256,7 +255,7 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                                       ));
                                                 },
                                                 additionalInfo: SizedBox(
-                                                    width: 70,
+                                                    width: 62,
                                                     child: Text(
                                                       "${ship.nowHP}/${ship.maxHP}",
                                                       textAlign:
@@ -283,41 +282,10 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                                   progressColor:
                                                       ship.damageColor,
                                                 ),
-                                                trailing:
-                                                    CircularPercentIndicator(
-                                                  backgroundColor:
-                                                      CupertinoDynamicColor
-                                                          .resolve(
-                                                              CupertinoColors
-                                                                  .systemGroupedBackground,
-                                                              context),
-                                                  reverse: true,
-                                                  radius: 12.0,
-                                                  lineWidth: 5.0,
-                                                  animation: true,
-                                                  animationDuration: 500,
-                                                  animateFromLastPercent:
-                                                      true,
-                                                  circularStrokeCap:
-                                                      CircularStrokeCap.round,
-                                                  percent:
-                                                      ship.condition! / 100,
-                                                  center: Container(
-                                                    height: 6,
-                                                    width: 6,
-                                                    decoration: BoxDecoration(
-                                                      shape: BoxShape.circle,
-                                                      color: ship.fuelBullColor(
-                                                          shipInfo?[ship
-                                                                  .shipId]!
-                                                              .apiFuelMax,
-                                                          shipInfo?[ship
-                                                                  .shipId]!
-                                                              .apiBullMax),
-                                                    ),
-                                                  ),
-                                                  progressColor:
-                                                      ship.sparkColor,
+                                                trailing: ShipConditionSupplyInfo(
+                                                  ship: ship,
+                                                  fuelMax: shipInfo?[ship.shipId]?.apiFuelMax,
+                                                  bullMax: shipInfo?[ship.shipId]?.apiBullMax,
                                                 ),
                                               ),
                                             SquadsShareButton
@@ -595,6 +563,62 @@ class ShipInfo extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 艦隊タブの Condition 値と補給状態 (済/未)
+class ShipConditionSupplyInfo extends StatelessWidget {
+  const ShipConditionSupplyInfo({
+    super.key,
+    required this.ship,
+    required this.fuelMax,
+    required this.bullMax,
+  });
+
+  final Ship ship;
+  final int? fuelMax;
+  final int? bullMax;
+
+  /// 50以上: 緑, 30〜49: 白 (ライトモードでは黒), 20〜29: オレンジ, 20未満: 赤
+  static Color conditionColor(int condition, BuildContext context) {
+    if (condition >= 50) return CupertinoColors.activeGreen.resolveFrom(context);
+    if (condition >= 30) return CupertinoColors.label.resolveFrom(context);
+    if (condition >= 20) return CupertinoColors.activeOrange.resolveFrom(context);
+    return CupertinoColors.systemRed.resolveFrom(context);
+  }
+
+  bool get isSupplied {
+    if (fuelMax == null || bullMax == null) return true;
+    return (ship.fuel ?? 0) >= fuelMax! && (ship.bull ?? 0) >= bullMax!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final condition = ship.condition ?? 0;
+    final supplied = isSupplied;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 28,
+          child: Text(
+            '$condition',
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              color: conditionColor(condition, context),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          supplied ? '済' : '未',
+          style: TextStyle(
+            color: supplied ? Colors.lightGreenAccent[700] : const Color(0xFFF06F23),
+          ),
+        ),
+      ],
     );
   }
 }
