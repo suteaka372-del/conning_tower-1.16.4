@@ -28,6 +28,7 @@ import 'map_state.dart';
 import 'operation_queue.dart';
 import 'quest_assistant.dart';
 import 'raw_data.dart';
+import 'quest_progress.dart';
 import 'repair_timer.dart';
 import 'sea_force_base.dart';
 import 'ship.dart';
@@ -61,6 +62,7 @@ class KancolleData {
   List<Squad>? battleSquads;
   Map<int, MapState>? mapStateMap;
   final RepairTimerState repairTimer;
+  final QuestProgressTracker questProgress;
 
   KancolleData({
     required this.queue,
@@ -75,7 +77,9 @@ class KancolleData {
     this.battleSquads,
     this.mapStateMap,
     RepairTimerState? repairTimer,
-  }) : repairTimer = repairTimer ?? RepairTimerState();
+    QuestProgressTracker? questProgress,
+  })  : repairTimer = repairTimer ?? RepairTimerState(),
+        questProgress = questProgress ?? _loadQuestProgress();
 
   KancolleData copyWith({
     OperationQueue? queue,
@@ -99,6 +103,7 @@ class KancolleData {
       battleSquads: battleSquads,
       mapStateMap: mapStateMap,
       repairTimer: repairTimer,
+      questProgress: questProgress,
     );
   }
 
@@ -128,6 +133,10 @@ class KancolleData {
     }
     int timestamp = rawData.timestamp;
     String path = source.split("kcsapi").last;
+
+    if (!source.startsWith("local")) {
+      trackQuestProgress(path, json, params);
+    }
 
     if (isBattleAPI(path)) {
       if (!ref.read(settingsProvider).kcBattleReportEnable) return;
@@ -666,6 +675,140 @@ class KancolleData {
       ref.watch(alertStateProvider.notifier).update(
           (state) => Alert(S.current.TextLDamage, shipsDamaged.join("\n")));
     }
+  }
+
+  static const String _kQuestProgressKey = "KC_QUEST_PROGRESS";
+
+  static QuestProgressTracker _loadQuestProgress() {
+    try {
+      return QuestProgressTracker.decode(localStorage.getString(_kQuestProgressKey));
+    } catch (e) {
+      return QuestProgressTracker();
+    }
+  }
+
+  void _saveQuestProgress() {
+    try {
+      localStorage.setString(_kQuestProgressKey, questProgress.encode());
+    } catch (e) {
+      log("save quest progress failed: $e");
+    }
+  }
+
+  static int? _intOf(dynamic value) => switch (value) {
+        int v => v,
+        num v => v.toInt(),
+        String v => int.tryParse(v),
+        _ => null,
+      };
+
+  /// 任務の進捗 (x/y) を API から数える (ElectronicObserver の QuestProgressManager 相当)
+  void trackQuestProgress(String path, dynamic json, Map<String, dynamic>? params) {
+    try {
+      final apiData = json is Map ? json['api_data'] : null;
+      final tracker = questProgress;
+      switch (path) {
+        case '/api_get_member/questlist':
+          final list = apiData is Map ? apiData['api_list'] : null;
+          if (list is! List) return;
+          tracker.onQuestList([
+            for (final item in list)
+              if (item is Map && _intOf(item['api_no']) != null)
+                QuestListItem(
+                  id: _intOf(item['api_no'])!,
+                  state: _intOf(item['api_state']) ?? 0,
+                  type: _intOf(item['api_type']) ?? 0,
+                  label: _intOf(item['api_label_type']) ?? 0,
+                  progressFlag: _intOf(item['api_progress_flag']) ?? 0,
+                )
+          ]);
+        case '/api_req_quest/clearitemget':
+          final id = _intOf(params?['api_quest_id']);
+          if (id == null) return;
+          tracker.onQuestCleared(id);
+        case '/api_req_quest/stop':
+          final id = _intOf(params?['api_quest_id']);
+          if (id == null) return;
+          tracker.onQuestStop(id);
+        case '/api_req_quest/start':
+          final id = _intOf(params?['api_quest_id']);
+          if (id == null) return;
+          tracker.onQuestStart(id);
+        case '/api_req_map/start' || '/api_req_map/next':
+          if (apiData is! Map) return;
+          if (path == '/api_req_map/start') tracker.onSortieStart();
+          tracker.onMapPoint(
+            mapId: (_intOf(apiData['api_maparea_id']) ?? 0) * 10 + (_intOf(apiData['api_mapinfo_no']) ?? 0),
+            eventId: _intOf(apiData['api_event_id']) ?? 0,
+            isEndPoint: _intOf(apiData['api_next']) == 0,
+          );
+        case '/api_req_sortie/battleresult' || '/api_req_combined_battle/battleresult':
+          if (apiData is! Map) return;
+          tracker.onBattleResult(
+            rank: '${apiData['api_win_rank'] ?? ''}',
+            sunkEnemyShipTypes: sunkEnemyShipTypes(),
+          );
+        case '/api_req_practice/battle_result':
+          if (apiData is! Map) return;
+          tracker.onPracticeResult('${apiData['api_win_rank'] ?? ''}');
+        case '/api_req_mission/result':
+          if (apiData is! Map) return;
+          final deckId = _intOf(params?['api_deck_id']);
+          if (deckId == null || deckId < 1 || deckId > squads.length) return;
+          final missionId = squads[deckId - 1].operation;
+          if (missionId == null || missionId == 0) return;
+          tracker.onExpeditionResult(
+            missionId: missionId,
+            success: (_intOf(apiData['api_clear_result']) ?? 0) != 0,
+          );
+        case '/api_req_nyukyo/start':
+          tracker.onDocking();
+        case '/api_req_hokyu/charge':
+          tracker.onSupply();
+        case '/api_req_kousyou/createitem':
+          tracker.onDevelopment('${params?['api_multiple_flag']}' == '1' ? 3 : 1);
+        case '/api_req_kousyou/createship':
+          tracker.onConstruction();
+        case '/api_req_kousyou/destroyship':
+          final ids = '${params?['api_ship_id'] ?? ''}'.split(',').where((e) => e.trim().isNotEmpty);
+          tracker.onDestruction(ids.length);
+        case '/api_req_kousyou/destroyitem2':
+          final ids = '${params?['api_slotitem_ids'] ?? ''}'.split(',').map(int.tryParse).whereType<int>();
+          tracker.onDiscard([
+            for (final id in ids)
+              if (fleet.equipment[id] case final equipment?)
+                DiscardedEquipment(
+                  itemId: equipment.itemId ?? 0,
+                  category: (equipment.type?.length ?? 0) > 2 ? equipment.type![2] : 0,
+                  icon: (equipment.type?.length ?? 0) > 3 ? equipment.type![3] : 0,
+                )
+          ]);
+        case '/api_req_kousyou/remodel_slot':
+          tracker.onImprovement();
+        case '/api_req_kaisou/powerup':
+          if (apiData is! Map) return;
+          tracker.onModernization(_intOf(apiData['api_powerup_flag']) == 1);
+        default:
+          return;
+      }
+      _saveQuestProgress();
+    } catch (e, s) {
+      log("quest progress tracking failed at $path: $e", stackTrace: s);
+    }
+  }
+
+  /// 直前の戦闘で撃沈した敵艦の艦種
+  List<int> sunkEnemyShipTypes() {
+    final result = <int>[];
+    for (final squad in battleInfo.enemySquads ?? <Squad>[]) {
+      for (final ship in squad.ships) {
+        if (ship.maxHP > 0 && ship.nowHP <= 0) {
+          final shipType = dataInfo.shipInfo?[ship.shipId]?.apiStype;
+          if (shipType != null) result.add(shipType);
+        }
+      }
+    }
+    return result;
   }
 
   Ship createShip(ShipDataEntity data) {
