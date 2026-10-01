@@ -94,24 +94,43 @@ class StatCondition {
   }
 }
 
-/// 保存できるフィルター (艦種 + 値の条件 最大3つ + 並び替え)
+/// 並び替えのキー1つ分
+class SortKey {
+  final ShipStat stat;
+  final bool descending;
+
+  const SortKey(this.stat, {this.descending = true});
+
+  String get text => repairText('${stat.label} ${descending ? "降順" : "昇順"}', '${stat.label} ${descending ? "desc" : "asc"}');
+
+  Map<String, dynamic> toJson() => {'stat': stat.name, 'descending': descending};
+
+  static SortKey? fromJson(Map<String, dynamic> json) {
+    final stat = ShipStat.values.where((e) => e.name == json['stat']).firstOrNull;
+    if (stat == null) return null;
+    return SortKey(stat, descending: json['descending'] != false);
+  }
+}
+
+/// 保存できるフィルター (艦種 + 値の条件 最大3つ + 並び替え 最大3つ)
 class ShipFilterPreset {
   static const int maxConditions = 3;
+  static const int maxSortKeys = 3;
 
   final String name;
 
   /// api_stype の ID。空なら全艦種
   final List<int> shipTypes;
   final List<StatCondition> conditions;
-  final ShipStat sortStat;
-  final bool descending;
+
+  /// 並び替え。先頭から順に比べ、同じ値なら次のキーで比べる (エクセルの並べ替えと同じ)
+  final List<SortKey> sortKeys;
 
   const ShipFilterPreset({
     required this.name,
     this.shipTypes = const [],
     this.conditions = const [],
-    this.sortStat = ShipStat.level,
-    this.descending = true,
+    this.sortKeys = const [SortKey(ShipStat.level)],
   });
 
   bool matches(Ship ship) {
@@ -119,25 +138,26 @@ class ShipFilterPreset {
     return conditions.every((c) => c.matches(ship));
   }
 
-  List<Ship> apply(Iterable<Ship> ships) {
-    final result = ships.where(matches).toList();
-    result.sort((a, b) {
-      final compare = sortStat.valueOf(a).compareTo(sortStat.valueOf(b));
-      if (compare != 0) return descending ? -compare : compare;
-      return a.uid.compareTo(b.uid);
-    });
-    return result;
+  int compare(Ship a, Ship b) {
+    for (final key in sortKeys) {
+      final compare = key.stat.valueOf(a).compareTo(key.stat.valueOf(b));
+      if (compare != 0) return key.descending ? -compare : compare;
+    }
+    return a.uid.compareTo(b.uid);
   }
 
+  List<Ship> apply(Iterable<Ship> ships) => ships.where(matches).toList()..sort(compare);
+
   /// 一覧に表示する値 (並び替え + 条件の値、重複なし)
-  List<ShipStat> get displayStats => {sortStat, ...conditions.map((c) => c.stat)}.toList();
+  List<ShipStat> get displayStats => {...sortKeys.map((k) => k.stat), ...conditions.map((c) => c.stat)}.toList();
+
+  String get sortText => sortKeys.map((k) => k.text).join(' → ');
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'shipTypes': shipTypes,
         'conditions': conditions.map((c) => c.toJson()).toList(),
-        'sortStat': sortStat.name,
-        'descending': descending,
+        'sortKeys': sortKeys.map((k) => k.toJson()).toList(),
       };
 
   static ShipFilterPreset? fromJson(Map<String, dynamic> json) {
@@ -151,13 +171,23 @@ class ShipFilterPreset {
             .take(maxConditions)
             .toList() ??
         [];
-    final sortStat = ShipStat.values.where((e) => e.name == json['sortStat']).firstOrNull ?? ShipStat.level;
+    var sortKeys = (json['sortKeys'] as List?)
+            ?.whereType<Map<String, dynamic>>()
+            .map(SortKey.fromJson)
+            .whereType<SortKey>()
+            .take(maxSortKeys)
+            .toList() ??
+        [];
+    if (sortKeys.isEmpty) {
+      // 以前の形式 (並び替え1つ)
+      final stat = ShipStat.values.where((e) => e.name == json['sortStat']).firstOrNull ?? ShipStat.level;
+      sortKeys = [SortKey(stat, descending: json['descending'] != false)];
+    }
     return ShipFilterPreset(
       name: name,
       shipTypes: shipTypes,
       conditions: conditions,
-      sortStat: sortStat,
-      descending: json['descending'] != false,
+      sortKeys: sortKeys,
     );
   }
 }
@@ -169,15 +199,13 @@ final List<ShipFilterPreset> kDefaultShipFilterPresets = [
     name: repairText('駆逐 基本対潜50', 'DD Base ASW 50'),
     shipTypes: const [_kShipTypeDestroyer],
     conditions: const [StatCondition(stat: ShipStat.baseAsw, op: CompareOp.gte, value: 50)],
-    sortStat: ShipStat.condition,
-    descending: true,
+    sortKeys: const [SortKey(ShipStat.condition)],
   ),
   ShipFilterPreset(
     name: repairText('駆逐 基本対潜64', 'DD Base ASW 64'),
     shipTypes: const [_kShipTypeDestroyer],
     conditions: const [StatCondition(stat: ShipStat.baseAsw, op: CompareOp.gte, value: 64)],
-    sortStat: ShipStat.condition,
-    descending: true,
+    sortKeys: const [SortKey(ShipStat.condition)],
   ),
 ];
 

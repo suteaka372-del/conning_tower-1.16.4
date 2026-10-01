@@ -17,11 +17,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Ship _ship(int uid, {int shipType = 2, int asw = 60, int condition = 49, List<Equipment> equipment = const []}) => Ship(
+Ship _ship(int uid,
+        {int shipType = 2, int asw = 60, int condition = 49, int level = 99, List<Equipment> equipment = const []}) =>
+    Ship(
       uid: uid,
       shipId: 100 + uid,
       name: 'ship$uid',
-      level: 99,
+      level: level,
       nowHP: 30,
       maxHP: 30,
       shipType: shipType,
@@ -66,8 +68,7 @@ void main() {
             StatCondition(stat: ShipStat.baseAsw, op: CompareOp.gte, value: 64),
             StatCondition(stat: ShipStat.level, op: CompareOp.lte, value: 98),
           ],
-          sortStat: ShipStat.condition,
-          descending: false,
+          sortKeys: [SortKey(ShipStat.condition, descending: false), SortKey(ShipStat.level)],
         ),
       ];
       final decoded = ShipFilterStore.decode(ShipFilterStore.encode(presets));
@@ -75,12 +76,36 @@ void main() {
       expect(decoded.first.name, 'test');
       expect(decoded.first.shipTypes, [2, 3]);
       expect(decoded.first.conditions.map((c) => c.text), presets.first.conditions.map((c) => c.text));
-      expect(decoded.first.sortStat, ShipStat.condition);
-      expect(decoded.first.descending, isFalse);
+      expect(decoded.first.sortKeys.map((k) => k.stat), [ShipStat.condition, ShipStat.level]);
+      expect(decoded.first.sortKeys.map((k) => k.descending), [false, true]);
 
       expect(ShipFilterStore.decode(null).length, kDefaultShipFilterPresets.length);
       expect(ShipFilterStore.decode('broken').length, kDefaultShipFilterPresets.length);
       expect(ShipFilterStore.decode('[]'), isEmpty); // all presets deleted
+    });
+
+    test('filters saved in the old format (one sort key) still load', () {
+      final decoded = ShipFilterStore.decode(
+          '[{"name":"old","shipTypes":[2],"conditions":[],"sortStat":"condition","descending":false}]');
+      expect(decoded.single.sortKeys.single.stat, ShipStat.condition);
+      expect(decoded.single.sortKeys.single.descending, isFalse);
+    });
+
+    test('multiple sort keys: condition desc, then level desc, then base ASW asc', () {
+      const preset = ShipFilterPreset(name: 'multi', sortKeys: [
+        SortKey(ShipStat.condition),
+        SortKey(ShipStat.level),
+        SortKey(ShipStat.baseAsw, descending: false),
+      ]);
+      final ships = [
+        _ship(1, condition: 49, level: 90),
+        _ship(2, condition: 49, level: 99, asw: 70),
+        _ship(3, condition: 85, level: 50),
+        _ship(4, condition: 49, level: 99, asw: 60),
+        _ship(5, condition: 30, level: 175),
+      ];
+      expect(preset.apply(ships).map((s) => s.uid), [3, 4, 2, 1, 5]);
+      expect(preset.displayStats, [ShipStat.condition, ShipStat.level, ShipStat.baseAsw]);
     });
 
     test('display stats are unique and start with the sort stat', () {
@@ -108,8 +133,13 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    // change the value 50 -> 64 and save
+    // change the value 50 -> 64, add a 2nd sort key (Lv) and save
     await tester.enterText(find.byType(CupertinoTextField).last, '64');
+    final addSortKey = find.byIcon(CupertinoIcons.add).last;
+    await tester.ensureVisible(addSortKey);
+    await tester.pumpAndSettle();
+    await tester.tap(addSortKey);
+    await tester.pumpAndSettle();
     final saveButton = find.descendant(of: find.byType(CupertinoNavigationBar), matching: find.byType(CupertinoButton));
     await tester.tap(saveButton.last);
     await tester.pumpAndSettle();
@@ -118,8 +148,8 @@ void main() {
     expect(result!.shipTypes, [2]);
     expect(result!.conditions.single.value, 64);
     expect(result!.conditions.single.stat, ShipStat.baseAsw);
-    expect(result!.sortStat, ShipStat.condition);
-    expect(result!.descending, isTrue);
+    expect(result!.sortKeys.map((k) => k.stat), [ShipStat.condition, ShipStat.level]);
+    expect(result!.sortKeys.every((k) => k.descending), isTrue);
     expect(tester.takeException(), isNull);
   });
 

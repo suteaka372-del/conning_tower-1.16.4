@@ -65,8 +65,7 @@ class _KancolleShipFilterEditorState extends State<KancolleShipFilterEditor> {
   late final TextEditingController _nameController;
   late Set<int> _shipTypes;
   late List<_ConditionDraft> _conditions;
-  late ShipStat _sortStat;
-  late bool _descending;
+  late List<SortKey> _sortKeys;
 
   @override
   void initState() {
@@ -77,8 +76,8 @@ class _KancolleShipFilterEditorState extends State<KancolleShipFilterEditor> {
     _conditions = [
       for (final c in initial?.conditions ?? <StatCondition>[]) _ConditionDraft(stat: c.stat, op: c.op, value: c.value)
     ];
-    _sortStat = initial?.sortStat ?? ShipStat.condition;
-    _descending = initial?.descending ?? true;
+    _sortKeys = [...?initial?.sortKeys];
+    if (_sortKeys.isEmpty) _sortKeys = [const SortKey(ShipStat.condition)];
   }
 
   @override
@@ -116,8 +115,7 @@ class _KancolleShipFilterEditorState extends State<KancolleShipFilterEditor> {
       name: name,
       shipTypes: _shipTypes.toList(),
       conditions: conditions,
-      sortStat: _sortStat,
-      descending: _descending,
+      sortKeys: [..._sortKeys],
     ));
   }
 
@@ -187,29 +185,57 @@ class _KancolleShipFilterEditorState extends State<KancolleShipFilterEditor> {
             ),
             CupertinoListSection.insetGrouped(
               margin: tabBottomListMargin,
-              header: Text(repairText('並び替え', 'Sort')),
+              header: Text(repairText(
+                  '並び替え (最大${ShipFilterPreset.maxSortKeys}つ、上から順に優先)',
+                  'Sort (up to ${ShipFilterPreset.maxSortKeys}, top has priority)')),
+              footer: Text(repairText(
+                  '第1キーが同じ値の艦は、第2キー、第3キーの順に並べます',
+                  'Ships with the same 1st key value are ordered by the 2nd, then 3rd key')),
               children: [
-                CupertinoListTile(
-                  title: Text(_sortStat.label),
-                  trailing: const CupertinoListTileChevron(),
-                  onTap: () async {
-                    final stat = await showShipFilterPicker<ShipStat>(context,
-                        title: repairText('並び替える値', 'Sort by'),
-                        options: ShipStat.values,
-                        label: (e) => e.label);
-                    if (stat != null) setState(() => _sortStat = stat);
-                  },
-                ),
-                CupertinoListTile(
-                  title: CupertinoSlidingSegmentedControl<bool>(
-                    groupValue: _descending,
-                    children: {
-                      true: Text(repairText('降順 (高い順)', 'Descending')),
-                      false: Text(repairText('昇順 (低い順)', 'Ascending')),
+                for (final (index, key) in _sortKeys.indexed) ...[
+                  CupertinoListTile(
+                    leading: Text(repairText('第${index + 1}', '#${index + 1}')),
+                    title: Text(key.stat.label),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_sortKeys.length > 1)
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: () => setState(() => _sortKeys.removeAt(index)),
+                            child: const Icon(CupertinoIcons.delete, color: CupertinoColors.destructiveRed),
+                          ),
+                        const CupertinoListTileChevron(),
+                      ],
+                    ),
+                    onTap: () async {
+                      final stat = await showShipFilterPicker<ShipStat>(context,
+                          title: repairText('第${index + 1}キーの値', 'Sort key #${index + 1}'),
+                          options: ShipStat.values,
+                          label: (e) => e.label);
+                      if (stat != null) {
+                        setState(() => _sortKeys[index] = SortKey(stat, descending: _sortKeys[index].descending));
+                      }
                     },
-                    onValueChanged: (value) => setState(() => _descending = value ?? true),
                   ),
-                ),
+                  CupertinoListTile(
+                    title: CupertinoSlidingSegmentedControl<bool>(
+                      groupValue: key.descending,
+                      children: {
+                        true: Text(repairText('降順 (高い順)', 'Descending')),
+                        false: Text(repairText('昇順 (低い順)', 'Ascending')),
+                      },
+                      onValueChanged: (value) => setState(
+                          () => _sortKeys[index] = SortKey(_sortKeys[index].stat, descending: value ?? true)),
+                    ),
+                  ),
+                ],
+                if (_sortKeys.length < ShipFilterPreset.maxSortKeys)
+                  CupertinoListTile(
+                    leading: const Icon(CupertinoIcons.add),
+                    title: Text(repairText('並び替えを追加', 'Add sort key')),
+                    onTap: () => setState(() => _sortKeys.add(const SortKey(ShipStat.level))),
+                  ),
               ],
             ),
           ],

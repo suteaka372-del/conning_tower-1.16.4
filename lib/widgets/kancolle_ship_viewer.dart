@@ -216,8 +216,7 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
             child: Text(
               [
                 ...preset.conditions.map((c) => c.text),
-                repairText('並び替え: ${preset.sortStat.label} ${preset.descending ? "降順" : "昇順"}',
-                    'Sort: ${preset.sortStat.label} ${preset.descending ? "desc" : "asc"}'),
+                repairText('並び替え: ${preset.sortText}', 'Sort: ${preset.sortText}'),
                 repairText('長押しで編集・削除', 'Long press to edit'),
               ].join(' / '),
               style: TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
