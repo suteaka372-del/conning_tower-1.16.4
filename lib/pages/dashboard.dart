@@ -1,4 +1,5 @@
 import 'package:conning_tower/generated/l10n.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/pages/dashboard_pages/battle_info_page.dart';
 import 'package:conning_tower/pages/dashboard_pages/dashboard_settings.dart';
 import 'package:conning_tower/pages/dashboard_pages/opreation_schedule.dart';
@@ -13,6 +14,7 @@ import 'package:conning_tower/routes/cupertino_picker_view.dart';
 import 'package:conning_tower/pages/dashboard_pages/web_info_page.dart';
 import 'package:conning_tower/style/app_color.dart';
 import 'package:conning_tower/widgets/dashboard_tab_view.dart';
+import 'package:conning_tower/widgets/kancolle_ship_viewer.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -61,6 +63,7 @@ class Dashboard extends ConsumerStatefulWidget {
           S.current.ToolTitleWeb,
           S.current.KCDashboardCommand,
           S.current.KCDashboardOperation,
+          repairText('艦娘フィルター', 'Ship filter'),
           S.current.KCDashboardFleet,
           S.current.KCDashboardBattleReport,
           S.current.KCDashboardQuest,
@@ -71,6 +74,7 @@ class Dashboard extends ConsumerStatefulWidget {
           const WebInfoPage(),
           const PortInfo(),
           const OperationPage(),
+          const ShipFilterTab(),
           const SquadInfo(),
           const BattleInfoPage(),
           const QuestInfoPage(),
@@ -85,6 +89,7 @@ class Dashboard extends ConsumerStatefulWidget {
           S.current.ToolTitleWeb,
           S.current.KCDashboardCommand,
           S.current.KCDashboardOperation,
+          repairText('艦娘フィルター', 'Ship filter'),
           S.current.KCDashboardFleet,
           S.current.KCDashboardBattleReport,
           S.current.KCDashboardQuest,
@@ -95,6 +100,7 @@ class Dashboard extends ConsumerStatefulWidget {
           const WebInfoPage(),
           const PortInfo(),
           const OperationPage(),
+          const ShipFilterTab(),
           const SquadInfo(),
           const BattleInfoPage(),
           const QuestInfoPage(),

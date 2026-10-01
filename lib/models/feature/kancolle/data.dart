@@ -34,6 +34,9 @@ import 'sea_force_base.dart';
 import 'ship.dart';
 import 'squad.dart';
 
+/// ダッシュボードの「戦闘情報」タブの位置 (艦娘フィルタータブ追加で 5 -> 6)
+const int kDashboardBattleReportIndex = 6;
+
 List<String> _battleAPI = [
   ReqSortieBattleEntity.source,
   ReqSortieBattleResultEntity.source,
@@ -363,7 +366,7 @@ class KancolleData {
       }
       resetShipEscapeState();
       addAlert();
-      ref.read(settingsProvider.notifier).changeDashboardIndex(5);
+      ref.read(settingsProvider.notifier).changeDashboardIndex(kDashboardBattleReportIndex);
       battleInfo.clear(pointChanged: true);
       battleInfo.mapInfo = dataInfo
           .mapAreaInfo?[model.apiData.apiMapareaId]?.map
@@ -606,7 +609,7 @@ class KancolleData {
     }
 
     if (model is ReqPracticeBattleEntity) {
-      ref.read(settingsProvider.notifier).changeDashboardIndex(5);
+      ref.read(settingsProvider.notifier).changeDashboardIndex(kDashboardBattleReportIndex);
       var squad = squads[model.apiData!.apiDeckId - 1];
       battleInfo.parsePracticeBattle(model.apiData!, squad);
     }

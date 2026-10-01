@@ -236,4 +236,21 @@ class ShipFilterStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, encode(presets));
   }
+
+  static const String _activeKey = 'KC_SHIP_FILTER_ACTIVE';
+
+  /// 選択中のフィルター名 (アプリを再起動しても復元する)
+  static Future<String?> loadActiveName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeKey);
+  }
+
+  static Future<void> saveActiveName(String? name) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (name == null) {
+      await prefs.remove(_activeKey);
+    } else {
+      await prefs.setString(_activeKey, name);
+    }
+  }
 }

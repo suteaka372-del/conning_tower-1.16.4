@@ -7,6 +7,8 @@ import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/models/feature/kancolle/ship_filter.dart';
 import 'package:conning_tower/widgets/kancolle_ship_filter_editor.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
+import 'package:conning_tower/utils/local_navigator.dart';
+import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -55,30 +57,51 @@ class KancolleShipViewer extends ConsumerStatefulWidget {
 class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
   ScrollController scrollController = ScrollController();
 
-  ShipStatus shipStatus = ShipStatus.all;
+  /// 絞り込み・並び替えの状態はアプリ全体で保持する (タブを切り替えても消えない)
+  ShipViewerState get _store => ref.read(shipViewerStateProvider);
 
-  ShipSlot shipSlot = ShipSlot.all;
+  ShipStatus get shipStatus => _store.shipStatus;
+  set shipStatus(ShipStatus value) => _store.shipStatus = value;
 
-  ShipSpeed shipSpeed = ShipSpeed.all;
+  ShipSlot get shipSlot => _store.shipSlot;
+  set shipSlot(ShipSlot value) => _store.shipSlot = value;
+
+  ShipSpeed get shipSpeed => _store.shipSpeed;
+  set shipSpeed(ShipSpeed value) => _store.shipSpeed = value;
 
   List<Ship>? ships;
 
-  ShipSort shipSort = ShipSort.levelDesc;
+  ShipSort get shipSort => _store.shipSort;
+  set shipSort(ShipSort value) => _store.shipSort = value;
 
   Map<String, List<int>> shipTypeMap = {S.current.TextAll: []};
 
-  List<String> selectedShipType = [S.current.TextAll];
+  List<String> get selectedShipType => _store.selectedShipType;
 
   /// 保存済みフィルター (EO のグループ相当)
-  List<ShipFilterPreset> presets = [];
+  List<ShipFilterPreset> get presets => _store.presets ?? const [];
+  set presets(List<ShipFilterPreset> value) => _store.presets = value;
 
-  ShipFilterPreset? activePreset;
+  ShipFilterPreset? get activePreset => _store.activePreset;
+  set activePreset(ShipFilterPreset? value) {
+    _store.activePreset = value;
+    ShipFilterStore.saveActiveName(value?.name).catchError((e) {
+      log("save active ship filter failed: $e");
+    });
+  }
 
   @override
   void initState() {
     super.initState();
-    ShipFilterStore.load().then((value) {
-      if (mounted) setState(() => presets = value);
+    if (_store.presets != null) return; // 読み込み済み
+    Future.wait([ShipFilterStore.load(), ShipFilterStore.loadActiveName()]).then((value) {
+      if (!mounted) return;
+      final loaded = value[0] as List<ShipFilterPreset>;
+      final activeName = value[1] as String?;
+      setState(() {
+        presets = loaded;
+        _store.activePreset = loaded.where((p) => p.name == activeName).firstOrNull;
+      });
     }).catchError((e) {
       log("load ship filter presets failed: $e");
     });
@@ -809,6 +832,37 @@ class FilterButton extends StatelessWidget {
             color: CupertinoColors.label.resolveFrom(context).withOpacity(0.5),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 艦娘一覧の絞り込み・並び替えの状態 (画面を閉じたりタブを切り替えても保持)
+class ShipViewerState {
+  ShipStatus shipStatus = ShipStatus.all;
+  ShipSlot shipSlot = ShipSlot.all;
+  ShipSpeed shipSpeed = ShipSpeed.all;
+  ShipSort shipSort = ShipSort.levelDesc;
+  final List<String> selectedShipType = [S.current.TextAll];
+
+  /// null なら未読み込み
+  List<ShipFilterPreset>? presets;
+  ShipFilterPreset? activePreset;
+}
+
+final shipViewerStateProvider = Provider<ShipViewerState>((ref) => ShipViewerState());
+
+/// ダッシュボードの「艦娘フィルター」タブ
+class ShipFilterTab extends StatelessWidget {
+  const ShipFilterTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: tabContentMargin,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10.0),
+        child: LocalNavigatorBuilder(builder: (context) => const KancolleShipViewer()),
       ),
     );
   }
