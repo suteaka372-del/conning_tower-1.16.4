@@ -60,103 +60,131 @@ class _SideBrowserState extends State<SideBrowser> {
 
   @override
   Widget build(BuildContext context) {
-    final barColor = CupertinoColors.systemGroupedBackground.resolveFrom(context);
-    return Column(
-      children: [
-        Expanded(
-          child: Stack(
-            children: [
-              InAppWebView(
-                initialUrlRequest: URLRequest(url: WebUri(SideBrowser.initialUrl())),
-                initialSettings: InAppWebViewSettings(
-                  javaScriptEnabled: true,
-                  userAgent: SideBrowser.mobileUserAgent,
-                  preferredContentMode: UserPreferredContentMode.MOBILE,
-                  javaScriptCanOpenWindowsAutomatically: true,
-                  supportZoom: true,
-                  allowsInlineMediaPlayback: true,
-                  isElementFullscreenEnabled: false,
-                  allowsBackForwardNavigationGestures: true,
-                ),
-                onWebViewCreated: (controller) => _controller = controller,
-                onProgressChanged: (controller, progress) {
-                  if (mounted) setState(() => _progress = progress / 100);
-                },
-                onLoadStop: (controller, url) {
-                  if (url != null) SideBrowser.saveLastUrl(url.toString());
-                  _updateNavigationState();
-                },
-                onUpdateVisitedHistory: (controller, url, isReload) {
-                  if (url != null) SideBrowser.saveLastUrl(url.toString());
-                  _updateNavigationState();
-                },
-                // 新しいウインドウ (ビューアなど) は同じ画面で開く
-                onCreateWindow: (controller, action) async {
-                  final url = action.request.url;
-                  if (url != null) {
-                    await controller.loadUrl(urlRequest: URLRequest(url: url));
-                  }
-                  return false;
-                },
-                onReceivedError: (controller, request, error) {
-                  log('side browser error: ${error.description}');
-                },
-              ),
-              if (_progress < 1.0)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: SizedBox(
-                    height: 2,
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: _progress.clamp(0.0, 1.0),
-                      child: const ColoredBox(color: CupertinoColors.activeBlue),
-                    ),
-                  ),
-                ),
-            ],
+    return SideBrowserLayout(
+      content: Stack(
+        children: [
+          InAppWebView(
+            initialUrlRequest: URLRequest(url: WebUri(SideBrowser.initialUrl())),
+            initialSettings: InAppWebViewSettings(
+              javaScriptEnabled: true,
+              userAgent: SideBrowser.mobileUserAgent,
+              preferredContentMode: UserPreferredContentMode.MOBILE,
+              javaScriptCanOpenWindowsAutomatically: true,
+              supportZoom: true,
+              allowsInlineMediaPlayback: true,
+              isElementFullscreenEnabled: false,
+              allowsBackForwardNavigationGestures: true,
+            ),
+            onWebViewCreated: (controller) => _controller = controller,
+            onProgressChanged: (controller, progress) {
+              if (mounted) setState(() => _progress = progress / 100);
+            },
+            onLoadStop: (controller, url) {
+              if (url != null) SideBrowser.saveLastUrl(url.toString());
+              _updateNavigationState();
+            },
+            onUpdateVisitedHistory: (controller, url, isReload) {
+              if (url != null) SideBrowser.saveLastUrl(url.toString());
+              _updateNavigationState();
+            },
+            // 新しいウインドウ (ビューアなど) は同じ画面で開く
+            onCreateWindow: (controller, action) async {
+              final url = action.request.url;
+              if (url != null) {
+                await controller.loadUrl(urlRequest: URLRequest(url: url));
+              }
+              return false;
+            },
+            onReceivedError: (controller, request, error) {
+              log('side browser error: ${error.description}');
+            },
           ),
-        ),
-        ColoredBox(
-          color: barColor,
-          child: SafeArea(
-            top: false,
-            left: false,
-            right: false,
-            child: SizedBox(
-              height: 44,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _BarButton(
-                    icon: CupertinoIcons.back,
-                    label: repairText('戻る', 'Back'),
-                    onPressed: _canGoBack ? () => _controller?.goBack() : null,
-                  ),
-                  _BarButton(
-                    icon: CupertinoIcons.forward,
-                    label: repairText('進む', 'Forward'),
-                    onPressed: _canGoForward ? () => _controller?.goForward() : null,
-                  ),
-                  _BarButton(
-                    icon: CupertinoIcons.refresh,
-                    label: repairText('再読み込み', 'Reload'),
-                    onPressed: () => _controller?.reload(),
-                  ),
-                  _BarButton(
-                    icon: CupertinoIcons.book,
-                    label: repairText('本棚', 'Shelf'),
-                    onPressed: () => _controller?.loadUrl(
-                        urlRequest: URLRequest(url: WebUri(SideBrowser.homeUrl))),
-                  ),
-                ],
+          if (_progress < 1.0)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: SizedBox(
+                height: 2,
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: _progress.clamp(0.0, 1.0),
+                  child: const ColoredBox(color: CupertinoColors.activeBlue),
+                ),
               ),
             ),
-          ),
-        ),
+        ],
+      ),
+      bar: SideBrowserBar(
+        onBack: _canGoBack ? () => _controller?.goBack() : null,
+        onForward: _canGoForward ? () => _controller?.goForward() : null,
+        onReload: () => _controller?.reload(),
+        onShelf: () => _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(SideBrowser.homeUrl))),
+      ),
+    );
+  }
+}
+
+/// ページを縦いっぱいに表示し、ボタンは右側に縦に並べる (縦長の漫画1ページのため上下に枠を取らない)
+class SideBrowserLayout extends StatelessWidget {
+  const SideBrowserLayout({super.key, required this.content, required this.bar});
+
+  final Widget content;
+  final Widget bar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: content),
+        bar,
       ],
+    );
+  }
+}
+
+/// 右側の縦のボタン列。上に「戻る・進む」、下に「再読み込み・本棚」。
+/// 真ん中は空けておく (向きによってはカメラ (Dynamic Island) がここに来るため)
+class SideBrowserBar extends StatelessWidget {
+  const SideBrowserBar({
+    super.key,
+    required this.onBack,
+    required this.onForward,
+    required this.onReload,
+    required this.onShelf,
+  });
+
+  static const double width = 44;
+
+  final VoidCallback? onBack;
+  final VoidCallback? onForward;
+  final VoidCallback? onReload;
+  final VoidCallback? onShelf;
+
+  @override
+  Widget build(BuildContext context) {
+    // 下の端はホームバーのスワイプと重ならないように少し上げる
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
+        border: Border(left: BorderSide(color: CupertinoColors.separator.resolveFrom(context), width: 0.5)),
+      ),
+      child: SizedBox(
+        width: width,
+        child: Column(
+          children: [
+            const SizedBox(height: 4),
+            _BarButton(icon: CupertinoIcons.back, label: repairText('戻る', 'Back'), onPressed: onBack),
+            _BarButton(icon: CupertinoIcons.forward, label: repairText('進む', 'Forward'), onPressed: onForward),
+            const Spacer(),
+            _BarButton(icon: CupertinoIcons.refresh, label: repairText('再読み込み', 'Reload'), onPressed: onReload),
+            _BarButton(icon: CupertinoIcons.book, label: repairText('本棚', 'Shelf'), onPressed: onShelf),
+            SizedBox(height: bottomInset > 0 ? bottomInset : 4),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -174,7 +202,7 @@ class _BarButton extends StatelessWidget {
       label: label,
       button: true,
       child: CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: EdgeInsets.zero,
         minSize: 44,
         onPressed: onPressed == null
             ? null

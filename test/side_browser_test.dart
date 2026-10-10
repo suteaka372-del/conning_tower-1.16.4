@@ -92,4 +92,58 @@ void main() {
     expect(tester.widget<Icon>(find.byIcon(CupertinoIcons.slider_horizontal_below_rectangle)).color, isNull);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('browser page uses the full height, buttons are on the right', (tester) async {
+    await S.load(const Locale('ja'));
+    final calls = <String>[];
+    await tester.pumpWidget(CupertinoApp(
+      home: MediaQuery(
+        // landscape iPhone: home indicator inset at the bottom only
+        data: const MediaQueryData(size: Size(874, 402), padding: EdgeInsets.only(bottom: 21)),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 400,
+            height: 380,
+            child: SideBrowserLayout(
+              content: const ColoredBox(key: ValueKey('page'), color: Color(0xFFFFFFFF)),
+              bar: SideBrowserBar(
+                onBack: null, // cannot go back yet
+                onForward: () => calls.add('forward'),
+                onReload: () => calls.add('reload'),
+                onShelf: () => calls.add('shelf'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final page = tester.getRect(find.byKey(const ValueKey('page')));
+    expect(page.top, 0);
+    expect(page.height, 380); // no frame above or below
+    expect(page.right, 400 - SideBrowserBar.width);
+
+    final bar = tester.getRect(find.byType(SideBrowserBar));
+    expect(bar.left, page.right);
+    expect(bar.height, 380);
+
+    double y(IconData icon) => tester.getCenter(find.byIcon(icon)).dy;
+    // back / forward at the top, reload / shelf at the bottom, the middle (camera area) is empty
+    expect(y(CupertinoIcons.back), lessThan(100));
+    expect(y(CupertinoIcons.forward), lessThan(100));
+    expect(y(CupertinoIcons.refresh), greaterThan(280));
+    expect(tester.getRect(find.byIcon(CupertinoIcons.book)).bottom, lessThanOrEqualTo(380 - 21));
+    for (final icon in [CupertinoIcons.back, CupertinoIcons.forward, CupertinoIcons.refresh, CupertinoIcons.book]) {
+      expect((y(icon) - 190).abs(), greaterThan(63)); // keep the center 126pt free
+    }
+
+    await tester.tap(find.byIcon(CupertinoIcons.back)); // disabled
+    await tester.tap(find.byIcon(CupertinoIcons.forward));
+    await tester.tap(find.byIcon(CupertinoIcons.refresh));
+    await tester.tap(find.byIcon(CupertinoIcons.book));
+    expect(calls, ['forward', 'reload', 'shelf']);
+    expect(tester.takeException(), isNull);
+  });
 }
