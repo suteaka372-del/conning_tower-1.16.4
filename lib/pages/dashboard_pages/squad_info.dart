@@ -309,12 +309,13 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                             fleet: QuestFleet.fromShips(
                                                 index + 1, squad.ships, shipInfo),
                                             tracker: data.questProgress,
-                                            titles: {
+                                            activeQuests: [
                                               for (final quest in data
                                                       .questAssistant?.ready ??
                                                   const <Quest>[])
-                                                quest.id: quest.title ?? '',
-                                            },
+                                                if (quest.state == 2)
+                                                  (id: quest.id, title: quest.title),
+                                            ],
                                           ),
                                         ),
                                         CupertinoListSection.insetGrouped(

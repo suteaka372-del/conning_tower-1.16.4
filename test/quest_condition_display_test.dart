@@ -50,16 +50,26 @@ void main() {
         accepted(201, type: 1), // 編成条件のない任務
         accepted(1138, type: 6), // 工廠 (秘書艦)
         accepted(840, type: 2), // 期限切れ
+        accepted(266), // 他の端末で破棄した任務 (保存した状態では遂行中のまま)
       ], now: DateTime(2026, 10, 11));
     tracker.questStates[840] = 2;
 
+    // 任務タブの最新の一覧で遂行中のもの
+    final active = [
+      (id: 249, title: null),
+      (id: 257, title: '「水雷戦隊」南西へ！'),
+      (id: 201, title: '敵艦隊を撃破せよ！'),
+      (id: 1138, title: null),
+      (id: 840, title: null),
+    ];
+
     final torpedoSquadron = QuestFleet(1, [qs(cl), qs(dd), qs(dd), qs(dd)]);
 
-    test('only accepted quests with conditions', () {
+    test('only quests in progress on the quest tab, with conditions', () {
       final items = questConditionItems(
         fleet: torpedoSquadron,
         tracker: tracker,
-        titles: {257: '「水雷戦隊」南西へ！'},
+        activeQuests: active,
         now: DateTime(2026, 10, 11),
       );
       expect(items.map((i) => i.questId), [249, 257, 1138]);
@@ -73,7 +83,8 @@ void main() {
 
     test('factory conditions only for the first fleet', () {
       final second = QuestFleet(2, torpedoSquadron.ships);
-      final items = questConditionItems(fleet: second, tracker: tracker, now: DateTime(2026, 10, 11));
+      final items =
+          questConditionItems(fleet: second, tracker: tracker, activeQuests: active, now: DateTime(2026, 10, 11));
       expect(items.map((i) => i.questId), [249, 257]);
     });
 
@@ -81,7 +92,16 @@ void main() {
       final t = QuestProgressTracker()..onQuestList([accepted(257)], now: DateTime(2026, 10, 11));
       t.onMapPoint(mapId: 14, eventId: 5, isEndPoint: true, fleet: torpedoSquadron);
       t.onBattleResult(rank: 'S', sunkEnemyShipTypes: [], fleet: torpedoSquadron);
-      expect(questConditionItems(fleet: torpedoSquadron, tracker: t, now: DateTime(2026, 10, 11)), isEmpty);
+      expect(
+          questConditionItems(
+              fleet: torpedoSquadron, tracker: t, activeQuests: [(id: 257, title: null)], now: DateTime(2026, 10, 11)),
+          isEmpty);
+    });
+
+    test('nothing until the quest list has been loaded', () {
+      expect(
+          questConditionItems(fleet: torpedoSquadron, tracker: tracker, activeQuests: const [], now: DateTime(2026, 10, 11)),
+          isEmpty);
     });
   });
 
@@ -90,6 +110,7 @@ void main() {
     final items = questConditionItems(
       fleet: QuestFleet(1, [qs(cl), qs(dd), qs(dd), qs(dd)]),
       tracker: tracker,
+      activeQuests: [(id: 249, title: null), (id: 257, title: null)],
       now: DateTime(2026, 10, 11),
     );
     await tester.pumpWidget(CupertinoApp(
@@ -119,7 +140,9 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final tracker = QuestProgressTracker()..onQuestList([accepted(257)], now: DateTime(2026, 10, 11));
+    // 保存した状態では 249・280 も遂行中のまま
+    final tracker = QuestProgressTracker()
+      ..onQuestList([accepted(257), accepted(249), accepted(280)], now: DateTime(2026, 10, 11));
     Ship ship(int uid, int type) => Ship(
           uid: uid,
           shipId: uid,
@@ -162,6 +185,8 @@ void main() {
               battleInfo: BattleInfo(),
               questAssistant: QuestAssistant(ready: [
                 Quest(id: 257, state: 2, type: 3, title: '「水雷戦隊」南西へ！'),
+                Quest(id: 249, state: 1, type: 3, title: '「第五戦隊」出撃せよ！'), // 未受諾
+                Quest(id: 280, state: 3, type: 3, title: '兵站線確保！海上警備を強化実施せよ！'), // 達成
               ], done: []),
               questProgress: tracker,
             )),
@@ -181,6 +206,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('受注中の任務の編成条件'), findsOneWidget);
     expect(find.text('「水雷戦隊」南西へ！'), findsOneWidget);
+    expect(find.text('「第五戦隊」出撃せよ！'), findsNothing);
+    expect(find.text('兵站線確保！海上警備を強化実施せよ！'), findsNothing);
     expect(find.byIcon(CupertinoIcons.check_mark_circled_solid), findsOneWidget);
     expect(find.text('対空カットイン (推定)'), findsOneWidget); // 合計欄の行
     expect(tester.takeException(), isNull);

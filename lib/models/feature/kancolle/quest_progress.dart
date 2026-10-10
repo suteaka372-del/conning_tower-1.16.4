@@ -1497,18 +1497,18 @@ class QuestConditionItem {
 }
 
 /// 受注中の任務のうち、編成条件付きで数える条件が残っているものを [fleet] で判定する。
+/// [activeQuests] は任務タブと同じ最新の任務一覧のうち遂行中 (api_state 2) のもの。
+/// 保存している任務の状態は使わない (他の端末で破棄・達成した任務が残るため)。
 /// 工廠任務 (秘書艦の条件) は第1艦隊のときだけ
 List<QuestConditionItem> questConditionItems({
   required QuestFleet fleet,
   required QuestProgressTracker tracker,
-  Map<int, String> titles = const {},
+  required Iterable<({int id, String? title})> activeQuests,
   DateTime? now,
 }) {
   now ??= DateTime.now();
-  final ids = [
-    for (final e in tracker.questStates.entries)
-      if (e.value == 2) e.key
-  ]..sort();
+  final titles = {for (final q in activeQuests) q.id: q.title};
+  final ids = titles.keys.toList()..sort();
   final items = <QuestConditionItem>[];
   for (final id in ids) {
     final definition = kQuestDefinitions[id];
