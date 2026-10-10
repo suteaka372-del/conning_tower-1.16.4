@@ -1454,3 +1454,84 @@ String questProgressFlagText(int? flag, int? state) {
   };
 }
 
+// ---- 艦隊タブの「受注中の任務の編成条件」 ----
+
+/// 任務の対象 (1-2・1-3 ボスS、演習 S勝利 など)
+String questTargetText(List<QuestCounter> counters) {
+  final battles = counters.where((c) => c.kind == QuestCounterKind.battle).toList();
+  if (battles.isNotEmpty) {
+    final labels = <String>{
+      for (final c in battles)
+        if (c.label.isNotEmpty)
+          c.label
+        else
+          for (final area in (c.areas ?? const <int>{}).toList()..sort()) '${area ~/ 10}-${area % 10}'
+    }.join('・');
+    final ranks = battles.map((c) => c.minRank).toSet();
+    final boss = battles.every((c) => c.bossOnly);
+    if (ranks.length == 1 && ranks.first > 0) {
+      return '$labels ${boss ? repairText('ボス', 'boss ') : ''}${_rankLabel(ranks.first)}';
+    }
+    return labels;
+  }
+  if (counters.any((c) => c.kind == QuestCounterKind.practice)) {
+    final rank = counters.firstWhere((c) => c.kind == QuestCounterKind.practice).minRank;
+    return rank > 0 ? repairText('演習 ${_rankLabel(rank)}勝利', 'Exercise ${_rankLabel(rank)}') : repairText('演習', 'Exercise');
+  }
+  if (counters.any((c) => c.kind == QuestCounterKind.discard)) return repairText('工廠 (秘書艦)', 'Factory (secretary)');
+  return '';
+}
+
+/// 1件分の表示
+class QuestConditionItem {
+  final int questId;
+  final String title;
+  final String target;
+  final List<(QuestFleetRequirement, bool)> requirements;
+
+  const QuestConditionItem({
+    required this.questId,
+    required this.title,
+    required this.target,
+    required this.requirements,
+  });
+
+  bool get isMet => requirements.every((r) => r.$2);
+}
+
+/// 受注中の任務のうち、編成条件付きで数える条件が残っているものを [fleet] で判定する。
+/// 工廠任務 (秘書艦の条件) は第1艦隊のときだけ
+List<QuestConditionItem> questConditionItems({
+  required QuestFleet fleet,
+  required QuestProgressTracker tracker,
+  Map<int, String> titles = const {},
+  DateTime? now,
+}) {
+  now ??= DateTime.now();
+  final ids = [
+    for (final e in tracker.questStates.entries)
+      if (e.value == 2) e.key
+  ]..sort();
+  final items = <QuestConditionItem>[];
+  for (final id in ids) {
+    final definition = kQuestDefinitions[id];
+    final condition = definition?.condition;
+    if (definition == null || condition == null) continue;
+    final validUntil = definition.validUntil;
+    if (validUntil != null && !now.isBefore(validUntil)) continue;
+    if (condition.secretary && fleet.fleetNumber != 1) continue;
+    final counters = tracker.progressOf(id)?.counters ?? definition.counters();
+    final remaining = [
+      for (final c in counters)
+        if (c.special && !c.isCleared) c
+    ];
+    if (remaining.isEmpty) continue;
+    items.add(QuestConditionItem(
+      questId: id,
+      title: (titles[id]?.isNotEmpty ?? false) ? titles[id]! : (definition.title ?? repairText('任務 $id', 'Quest $id')),
+      target: questTargetText(remaining),
+      requirements: [for (final r in condition.requirements) (r, r.isMet(fleet))],
+    ));
+  }
+  return items;
+}
