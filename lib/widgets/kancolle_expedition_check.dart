@@ -418,15 +418,20 @@ class ExpeditionRequirementTable extends StatelessWidget {
   static const double _valueWidth = 54;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+      builder: (context, constraints) => _buildTable(context, narrow: constraints.maxWidth < 360));
+
+  Widget _buildTable(BuildContext context, {required bool narrow}) {
+    final valueWidth = narrow ? 44.0 : _valueWidth;
+    final requiredWidth = narrow ? 50.0 : 64.0;
     final okColor = CupertinoColors.label.resolveFrom(context);
     final ngColor = CupertinoColors.systemRed.resolveFrom(context);
     final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
     final greenColor = CupertinoColors.systemGreen.resolveFrom(context);
 
-    Widget cell(String text, {Color? color, FontWeight? weight, double width = _valueWidth}) =>
+    Widget cell(String text, {Color? color, FontWeight? weight, double? width}) =>
         SizedBox(
-          width: width,
+          width: width ?? valueWidth,
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
@@ -448,7 +453,7 @@ class ExpeditionRequirementTable extends StatelessWidget {
                     style: TextStyle(fontSize: 13, fontWeight: bold ? FontWeight.w600 : null),
                     overflow: TextOverflow.ellipsis),
               ),
-              cell(required, color: secondary, width: 64),
+              cell(required, color: secondary, width: requiredWidth),
               ...values,
             ],
           ),
@@ -473,7 +478,7 @@ class ExpeditionRequirementTable extends StatelessWidget {
                   child: Text(repairText('条件', 'Condition'),
                       style: TextStyle(fontSize: 12, color: secondary)),
                 ),
-                cell(repairText('必要', 'Need'), color: secondary, width: 64),
+                cell(repairText('必要', 'Need'), color: secondary, width: requiredWidth),
                 for (final number in fleetNumbers)
                   cell(repairText('第$number', '#$number'), color: secondary),
               ],

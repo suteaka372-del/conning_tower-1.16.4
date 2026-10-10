@@ -152,9 +152,6 @@ class QuestDefinition {
 
   /// 編成条件 (条件付きで数えるものがある任務だけ)
   QuestFleetCondition? get condition => kQuestFleetConditions[id];
-
-  /// 編成条件付きで数える条件があるか
-  bool get hasSpecialCounter => counters().any((c) => c.special);
 }
 
 // ---- 定義用ヘルパー ----
