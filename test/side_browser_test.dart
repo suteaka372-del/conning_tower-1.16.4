@@ -146,4 +146,30 @@ void main() {
     expect(calls, ['forward', 'reload', 'shelf']);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('portrait: browser page starts below the status bar', (tester) async {
+    await S.load(const Locale('ja'));
+    await tester.pumpWidget(CupertinoApp(
+      home: MediaQuery(
+        data: const MediaQueryData(size: Size(402, 874), padding: EdgeInsets.only(top: 62)),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 402,
+            height: 300,
+            child: SideBrowserLayout(
+              content: const ColoredBox(key: ValueKey('page'), color: Color(0xFFFFFFFF)),
+              bar: SideBrowserBar(onBack: null, onForward: null, onReload: () {}, onShelf: () {}),
+            ),
+          ),
+        ),
+      ),
+    ));
+    final page = tester.getRect(find.byKey(const ValueKey('page')));
+    expect(page.top, 62);
+    expect(page.bottom, 300);
+    expect(page.right, 402 - SideBrowserBar.width);
+    expect(tester.getRect(find.byType(SideBrowserBar)).right, 402);
+    expect(tester.takeException(), isNull);
+  });
 }

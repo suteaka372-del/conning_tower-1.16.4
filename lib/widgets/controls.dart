@@ -41,7 +41,7 @@ enum ConFunc {
 }
 
 class Controls extends ConsumerStatefulWidget {
-  Controls(CookieManager? cookieManager,
+  const Controls(CookieManager? cookieManager,
       {super.key,
       required this.notifyParent,
       required this.orientation,
@@ -89,7 +89,8 @@ class _ControlsState extends ConsumerState<Controls> {
     3: ConFunc.goBack,
     4: ConFunc.goForward,
     5: ConFunc.navi2Settings,
-    6: ConFunc.navi2About,
+    6: ConFunc.toggleBrowser,
+    7: ConFunc.navi2About,
     // 1: ConFunc.adjustWindow,
     // 8: ConFunc.clearCookies,
     // 9: ConFunc.clearCache
@@ -99,7 +100,7 @@ class _ControlsState extends ConsumerState<Controls> {
     0: 0, //loadHome
     1: 1, //navi2Tool
     2: 5, //navi2Settings
-    3: 6, //navi2About
+    3: 7, //navi2About
   };
 
   /// 横画面の左メニュー (設定と情報の間にダッシュボード)
@@ -124,7 +125,7 @@ class _ControlsState extends ConsumerState<Controls> {
 
   void _onItemTapped(int index, {bool landscape = false}) {
     setState(() {
-      final keepSelection = landscape ? [2, 3, 4, 6, 7] : [2, 3, 4];
+      final keepSelection = landscape ? [2, 3, 4, 6, 7] : [2, 3, 4, 6];
       if (!keepSelection.contains(index)) {
         _selectedIndex = index;
       }
@@ -151,6 +152,11 @@ class _ControlsState extends ConsumerState<Controls> {
         currentIndex: _selectedIndex,
         onTap: ((value) async {
           HapticFeedback.mediumImpact();
+          if (funcMap[value] == ConFunc.toggleBrowser) {
+            // ブラウザの切り替えはゲームの WebView を使わないので先に処理する
+            widget.functionMap[FunctionName.toggleBrowser]?.call();
+            return;
+          }
           _onTap(value, context, controller, flnp);
         }),
         items: [
@@ -182,6 +188,13 @@ class _ControlsState extends ConsumerState<Controls> {
               CupertinoIcons.settings,
             ),
             label: S.of(context).SettingsButton,
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(
+              CupertinoIcons.book,
+              color: widget.browserOpen ? CupertinoColors.activeBlue : null,
+            ),
+            label: repairText('ブラウザ', 'Browser'),
           ),
           BottomNavigationBarItem(
             icon: const Icon(

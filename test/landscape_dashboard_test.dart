@@ -11,9 +11,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// initState が呼ばれた回数を数える (作り直されたかどうかの確認用)
 class _CountingBox extends StatefulWidget {
-  const _CountingBox();
+  const _CountingBox(this.name);
 
-  static int created = 0;
+  final String name;
+  static final Map<String, int> created = {};
 
   @override
   State<_CountingBox> createState() => _CountingBoxState();
@@ -23,7 +24,7 @@ class _CountingBoxState extends State<_CountingBox> {
   @override
   void initState() {
     super.initState();
-    _CountingBox.created++;
+    _CountingBox.created[widget.name] = (_CountingBox.created[widget.name] ?? 0) + 1;
   }
 
   @override
@@ -34,15 +35,33 @@ enum _Mode { portrait, landscape, side }
 
 /// home.dart と同じ組み方:
 /// Row [メニュー?, 区切り?, Expanded(Stack > Flex)]
-/// Flex: 縦は [ダッシュボード, ゲーム]、横並びは [ゲーム, 境目, ダッシュボード]
+/// Flex: 縦は [ダッシュボード欄, ゲーム]、横並びは [ゲーム, 境目, ダッシュボード欄]
+/// ダッシュボード欄: SizedBox > MediaQuery.removePadding > IndexedStack [ダッシュボード, ブラウザ]
 Widget _layout(_Mode mode) {
   final side = mode == _Mode.side;
   final landscape = mode != _Mode.portrait;
   const rail = SizedBox(key: ValueKey("rail"), width: 56, child: Text('rail'));
   const railDivider = SizedBox(key: ValueKey("railDivider"), width: 1);
+  Widget panel(double width, double height) => SizedBox(
+        key: const ValueKey("dashboard"),
+        width: width,
+        height: height,
+        child: Builder(
+          builder: (context) => MediaQuery.removePadding(
+            context: context,
+            removeTop: side,
+            removeLeft: side,
+            removeRight: side,
+            child: IndexedStack(index: 1, children: [
+              Text(side ? 'dashboard (bottom tabs)' : 'dashboard'),
+              const _CountingBox('browser'),
+            ]),
+          ),
+        ),
+      );
   final dash = [
     const SizedBox(key: ValueKey("divider"), width: 18),
-    const SizedBox(key: ValueKey("dashboard"), width: 300, height: 400, child: Text('dashboard')),
+    panel(300, 400),
   ];
   return Directionality(
     textDirection: TextDirection.ltr,
@@ -55,14 +74,14 @@ Widget _layout(_Mode mode) {
             direction: side ? Axis.horizontal : Axis.vertical,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (!side) const Expanded(key: ValueKey("dashboard"), child: Text('dashboard')),
+              if (mode == _Mode.portrait) panel(300, 200), // 横画面 (横並びなし) では欄を出さない
               const Padding(
                 key: ValueKey("game"),
                 padding: EdgeInsets.zero,
                 child: SizedBox(
                   width: 300,
                   height: 180,
-                  child: Center(child: SizedBox(width: 300, height: 180, child: _CountingBox())),
+                  child: Center(child: SizedBox(width: 300, height: 180, child: _CountingBox('game'))),
                 ),
               ),
               if (side) ...dash,
@@ -75,8 +94,8 @@ Widget _layout(_Mode mode) {
 }
 
 void main() {
-  testWidgets('game view is not recreated when switching layouts (portrait / landscape / side by side)', (tester) async {
-    _CountingBox.created = 0;
+  testWidgets('game and browser are not recreated when rotating (portrait <-> side by side)', (tester) async {
+    _CountingBox.created.clear();
     for (final mode in [
       _Mode.portrait,
       _Mode.landscape,
@@ -88,8 +107,16 @@ void main() {
     ]) {
       await tester.pumpWidget(_layout(mode));
     }
-    expect(_CountingBox.created, 1);
-    expect(find.text('dashboard'), findsOneWidget);
+    expect(_CountingBox.created['game'], 1);
+    expect(find.text('dashboard (bottom tabs)', skipOffstage: false), findsOneWidget);
+
+    // browser: kept between portrait and side by side (only the plain landscape view has no panel)
+    _CountingBox.created.clear();
+    for (final mode in [_Mode.landscape, _Mode.portrait, _Mode.side, _Mode.portrait, _Mode.side]) {
+      await tester.pumpWidget(_layout(mode));
+    }
+    expect(_CountingBox.created['browser'], 1);
+    expect(_CountingBox.created['game'], isNull); // still the first game view
   });
 
   testWidgets('landscape rail: dashboard button between settings and about', (tester) async {
@@ -145,7 +172,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('portrait bottom bar is unchanged (no dashboard button)', (tester) async {
+  testWidgets('portrait bottom bar: browser button, no dashboard button', (tester) async {
+    var browserToggled = 0;
     SharedPreferences.setMockInitialValues({});
     localStorage = await SharedPreferences.getInstance();
     selectedIndex = 0; // main() で設定されるグローバル値
@@ -165,7 +193,7 @@ void main() {
             null,
             notifyParent: () {},
             orientation: Orientation.portrait,
-            functionMap: const {},
+            functionMap: {FunctionName.toggleBrowser: () => browserToggled++},
           ),
         ),
       ),
@@ -173,6 +201,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(CupertinoIcons.slider_horizontal_below_rectangle), findsNothing);
     expect(find.byIcon(CupertinoIcons.info), findsOneWidget);
+    // browser button between settings and about
+    double x(IconData icon) => tester.getCenter(find.byIcon(icon)).dx;
+    expect(x(CupertinoIcons.settings), lessThan(x(CupertinoIcons.book)));
+    expect(x(CupertinoIcons.book), lessThan(x(CupertinoIcons.info)));
+    await tester.tap(find.byIcon(CupertinoIcons.book));
+    await tester.pumpAndSettle();
+    expect(browserToggled, 1);
   });
 
   testWidgets('menu does not add its own camera margin when padding is removed', (tester) async {

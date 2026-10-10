@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
+import 'dart:math' as math;
 
 import 'package:circular_menu/circular_menu.dart';
 import 'package:conning_tower/constants.dart';
@@ -86,7 +87,7 @@ class HomePageState extends ConsumerState<HomePage> {
     try {
       landscapeDashboard = localStorage.getBool("landscapeDashboard") ?? false;
       sidePanel = localStorage.getString("landscapeSidePanel") == "browser" ? SidePanel.browser : SidePanel.dashboard;
-      _browserCreated = landscapeDashboard && sidePanel == SidePanel.browser;
+      _browserCreated = sidePanel == SidePanel.browser;
       sideRatio = localStorage.getDouble("landscapeDashboardRatio") ?? SideBySideLayout.defaultRatio;
     } catch (_) {}
 
@@ -114,6 +115,18 @@ class HomePageState extends ConsumerState<HomePage> {
     });
     try {
       localStorage.setBool("landscapeDashboard", landscapeDashboard);
+      localStorage.setString("landscapeSidePanel", sidePanel.name);
+    } catch (_) {}
+  }
+
+  /// 縦画面: 上のダッシュボード欄をブラウザ ⇔ ダッシュボードで切り替える
+  void _togglePortraitBrowser() {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      sidePanel = sidePanel == SidePanel.browser ? SidePanel.dashboard : SidePanel.browser;
+      if (sidePanel == SidePanel.browser) _browserCreated = true;
+    });
+    try {
       localStorage.setString("landscapeSidePanel", sidePanel.name);
     } catch (_) {}
   }
@@ -341,7 +354,13 @@ class HomePageState extends ConsumerState<HomePage> {
             Scaffold(body: DashboardPage(notifyParent: () => setState(() {}))));
       },
       FunctionName.toggleDashboard: () => _tapSidePanel(SidePanel.dashboard),
-      FunctionName.toggleBrowser: () => _tapSidePanel(SidePanel.browser),
+      FunctionName.toggleBrowser: () {
+        if (MediaQuery.of(context).orientation == Orientation.portrait) {
+          _togglePortraitBrowser();
+        } else {
+          _tapSidePanel(SidePanel.browser);
+        }
+      },
       FunctionName.showTaskPage: () async {
         showCupertinoModalBottomSheet(
           expand: true,
@@ -466,6 +485,7 @@ class HomePageState extends ConsumerState<HomePage> {
                   },
                   orientation: orientation,
                   functionMap: functionMap,
+                  browserOpen: sidePanel == SidePanel.browser,
                 )
               : null,
           body: SafeArea(
@@ -636,11 +656,16 @@ class HomePageState extends ConsumerState<HomePage> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   if (!sideBySide && enableDashboard && settings.showDashboardInHome)
-                                    Expanded(
-                                        key: const ValueKey("dashboard"),
-                                        child: settings.useKancolleListener
-                                            ? Dashboard.kancolle(notifyParent: () => setState(() {}))
-                                            : Dashboard.general(notifyParent: () => setState(() {}))),
+                                    dashboardPanel(
+                                      width: box.maxWidth,
+                                      height: math.max(
+                                          0,
+                                          box.maxHeight -
+                                              gameAreaHeight -
+                                              (enableBottomPadding ? bottomPaddingHeightValue : 0)),
+                                      side: false,
+                                      kancolle: settings.useKancolleListener,
+                                    ),
                                   Padding(
                                     key: const ValueKey("game"),
                                     padding: EdgeInsets.only(
@@ -715,28 +740,41 @@ class HomePageState extends ConsumerState<HomePage> {
       onDragEnd: _onSideDragEnd,
       onReset: _resetSideRatio,
     );
-    final dashboard = SizedBox(
+    return [handle, dashboardPanel(width: width, height: height, side: true, kancolle: kancolle)];
+  }
+
+  /// ダッシュボード欄 (縦画面の上 / 横並びの右)。縦横で同じ組み方にして、回転してもブラウザのページを保つ
+  Widget dashboardPanel({
+    required double width,
+    required double height,
+    required bool side,
+    required bool kancolle,
+  }) {
+    return SizedBox(
       key: const ValueKey("dashboard"),
       width: width,
       height: height,
-      // 左右の安全領域は外側で使い切っているので、中では上と左右の余白を取らない (下はホームバー分を残す)
+      // 横並びでは左右の安全領域を外側で使い切っているので、中では上と左右の余白を取らない (下はホームバー分を残す)
       child: MediaQuery.removePadding(
         context: context,
-        removeTop: true,
-        removeLeft: true,
-        removeRight: true,
+        removeTop: side,
+        removeLeft: side,
+        removeRight: side,
         // ダッシュボードとブラウザを重ねて持ち、表示だけ切り替える (ブラウザのページを保つため)
         child: IndexedStack(
           index: sidePanel == SidePanel.browser ? 1 : 0,
           children: [
-            kancolle
-                ? Dashboard.kancolleWithBottomTab(notifyParent: () => setState(() {}))
-                : Dashboard.generalWithBottomTab(notifyParent: () => setState(() {})),
+            side
+                ? (kancolle
+                    ? Dashboard.kancolleWithBottomTab(notifyParent: () => setState(() {}))
+                    : Dashboard.generalWithBottomTab(notifyParent: () => setState(() {})))
+                : (kancolle
+                    ? Dashboard.kancolle(notifyParent: () => setState(() {}))
+                    : Dashboard.general(notifyParent: () => setState(() {}))),
             if (_browserCreated || sidePanel == SidePanel.browser) const SideBrowser() else const SizedBox.shrink(),
           ],
         ),
       ),
     );
-    return [handle, dashboard];
   }
 }

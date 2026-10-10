@@ -134,12 +134,18 @@ class SideBrowserLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: content),
-        bar,
-      ],
+    // 縦画面では上のステータスバー (時計など) の下から表示する。横並びでは上の余白は 0
+    return SafeArea(
+      left: false,
+      right: false,
+      bottom: false,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: content),
+          bar,
+        ],
+      ),
     );
   }
 }
