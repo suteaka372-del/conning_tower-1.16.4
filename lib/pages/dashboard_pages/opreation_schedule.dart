@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:conning_tower/models/feature/kancolle/operation_queue.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
+import 'package:conning_tower/utils/local_navigator.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/input_pages.dart';
-import 'package:conning_tower/widgets/scroll_view.dart';
+import 'package:conning_tower/widgets/kancolle_expedition_check.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// 遠征タブ (進行中の遠征のタイマーと、全遠征の遠征チェック)
 class OperationPage extends ConsumerWidget {
   const OperationPage({super.key});
 
@@ -14,8 +16,28 @@ class OperationPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final queueMap =
         ref.watch(kancolleDataProvider.select((data) => data.queue.map));
-    return OperationSchedule(
-      queueMap: queueMap,
+    return Padding(
+      padding: tabContentMargin,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10.0),
+        child: LocalNavigatorBuilder(builder: (context) {
+          return CupertinoPageScaffold(
+            child: SafeArea(
+              bottom: false,
+              child: CupertinoScrollbar(
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: OperationSchedule(queueMap: queueMap),
+                    ),
+                    const ExpeditionCheckSliver(),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
     );
   }
 }
@@ -90,48 +112,35 @@ class OperationScheduleState extends ConsumerState<OperationSchedule> {
     final missionInfo = ref.watch(
         kancolleDataProvider.select((data) => data.dataInfo.missionInfo));
 
-    return LayoutBuilder(builder: (context, constraints) {
-      return Padding(
-        padding: tabContentMargin,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(10.0),
-          child: CupertinoPageScaffold(
-            child: SafeArea(
-              bottom: false,
-              child: ScrollViewWithCupertinoScrollbar(
-                children: List.generate(3, (index) {
-                  final squad = index + 2;
-                  final operation = queueMap[squad]!;
-                  var squadName = '-';
-                  String? missionName = '--';
-                  var missionCode = '-';
-                  // print(missionCode);
-                  // print(operation);
-                  if (squads.length >= squad) {
-                    squadName = squads[squad - 1].name;
-                  }
+    return Column(
+      children: List.generate(3, (index) {
+        final squad = index + 2;
+        final operation = queueMap[squad]!;
+        var squadName = '-';
+        String? missionName = '--';
+        var missionCode = '-';
+        if (squads.length >= squad) {
+          squadName = squads[squad - 1].name;
+        }
 
-                  if (operation.id < 999) {
-                    var mission = missionInfo![operation.id]!;
-                    missionCode = mission.apiDispNo;
-                    missionName = mission.apiName;
-                  }
-                  return CupertinoListSection.insetGrouped(
-                      margin: tabBottomListMargin,
-                      footer: CupertinoListSectionDescription(squadName),
-                      children: [
-                        CupertinoListTile(
-                          leading: Text(missionCode),
-                          title: Text(missionName ?? '--'),
-                          additionalInfo: Text('${remainingTimes[squad]}'),
-                        ),
-                      ]);
-                }),
+        if (operation.id < 999) {
+          final mission = missionInfo?[operation.id];
+          if (mission != null) {
+            missionCode = mission.apiDispNo;
+            missionName = mission.apiName;
+          }
+        }
+        return CupertinoListSection.insetGrouped(
+            margin: tabBottomListMargin,
+            footer: CupertinoListSectionDescription(squadName),
+            children: [
+              CupertinoListTile(
+                leading: Text(missionCode),
+                title: Text(missionName ?? '--'),
+                additionalInfo: Text('${remainingTimes[squad]}'),
               ),
-            ),
-          ),
-        ),
-      );
-    });
+            ]);
+      }),
+    );
   }
 }
