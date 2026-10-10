@@ -24,6 +24,7 @@ import 'package:conning_tower/widgets/controls.dart';
 import 'package:conning_tower/widgets/dialog.dart';
 import 'package:conning_tower/widgets/indexed_stack.dart';
 import 'package:conning_tower/widgets/modal_sheets.dart';
+import 'package:conning_tower/widgets/side_browser.dart';
 import 'package:conning_tower/widgets/side_resize_handle.dart';
 import 'package:conning_tower/widgets/sidebar.dart';
 import 'package:conning_tower/widgets/texts.dart';
@@ -53,6 +54,12 @@ class HomePageState extends ConsumerState<HomePage> {
   /// 横画面でゲーム画面の右にダッシュボードを並べるか (左メニューのボタンで切り替え)
   bool landscapeDashboard = false;
 
+  /// 横並びの右側に出すもの (ダッシュボード / ブラウザ)
+  SidePanel sidePanel = SidePanel.dashboard;
+
+  /// ブラウザは一度開いたら、ダッシュボードに切り替えても読んでいるページを保つ
+  bool _browserCreated = false;
+
   /// 横並び時のダッシュボード幅の割合 (境目のドラッグで変更、既定は半分)
   double sideRatio = SideBySideLayout.defaultRatio;
 
@@ -78,6 +85,8 @@ class HomePageState extends ConsumerState<HomePage> {
     showControls = true;
     try {
       landscapeDashboard = localStorage.getBool("landscapeDashboard") ?? false;
+      sidePanel = localStorage.getString("landscapeSidePanel") == "browser" ? SidePanel.browser : SidePanel.dashboard;
+      _browserCreated = landscapeDashboard && sidePanel == SidePanel.browser;
       sideRatio = localStorage.getDouble("landscapeDashboardRatio") ?? SideBySideLayout.defaultRatio;
     } catch (_) {}
 
@@ -93,6 +102,20 @@ class HomePageState extends ConsumerState<HomePage> {
   void dispose() {
     super.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+  }
+
+  void _tapSidePanel(SidePanel tapped) {
+    HapticFeedback.mediumImpact();
+    final next = SidePanelState(open: landscapeDashboard, panel: sidePanel).tap(tapped);
+    setState(() {
+      landscapeDashboard = next.open;
+      sidePanel = next.panel;
+      if (next.isShowing(SidePanel.browser)) _browserCreated = true;
+    });
+    try {
+      localStorage.setBool("landscapeDashboard", landscapeDashboard);
+      localStorage.setString("landscapeSidePanel", sidePanel.name);
+    } catch (_) {}
   }
 
   void _saveSideRatio() {
@@ -317,11 +340,8 @@ class HomePageState extends ConsumerState<HomePage> {
         navigatorToCupertino(context,
             Scaffold(body: DashboardPage(notifyParent: () => setState(() {}))));
       },
-      FunctionName.toggleDashboard: () {
-        HapticFeedback.mediumImpact();
-        setState(() => landscapeDashboard = !landscapeDashboard);
-        localStorage.setBool("landscapeDashboard", landscapeDashboard);
-      },
+      FunctionName.toggleDashboard: () => _tapSidePanel(SidePanel.dashboard),
+      FunctionName.toggleBrowser: () => _tapSidePanel(SidePanel.browser),
       FunctionName.showTaskPage: () async {
         showCupertinoModalBottomSheet(
           expand: true,
@@ -534,7 +554,8 @@ class HomePageState extends ConsumerState<HomePage> {
                         notifyParent: () => setState(() {}),
                         cookieManager: widget.cookieManager,
                         functionMap: functionMap,
-                        dashboardOpen: landscapeDashboard,
+                        dashboardOpen: landscapeDashboard && sidePanel == SidePanel.dashboard,
+                        browserOpen: landscapeDashboard && sidePanel == SidePanel.browser,
                       ),
                     ),
                     const VerticalDivider(key: ValueKey("railDivider"), thickness: 1, width: 1),
@@ -704,9 +725,16 @@ class HomePageState extends ConsumerState<HomePage> {
         removeTop: true,
         removeLeft: true,
         removeRight: true,
-        child: kancolle
-            ? Dashboard.kancolleWithBottomTab(notifyParent: () => setState(() {}))
-            : Dashboard.generalWithBottomTab(notifyParent: () => setState(() {})),
+        // ダッシュボードとブラウザを重ねて持ち、表示だけ切り替える (ブラウザのページを保つため)
+        child: IndexedStack(
+          index: sidePanel == SidePanel.browser ? 1 : 0,
+          children: [
+            kancolle
+                ? Dashboard.kancolleWithBottomTab(notifyParent: () => setState(() {}))
+                : Dashboard.generalWithBottomTab(notifyParent: () => setState(() {})),
+            if (_browserCreated || sidePanel == SidePanel.browser) const SideBrowser() else const SizedBox.shrink(),
+          ],
+        ),
       ),
     );
     return [handle, dashboard];

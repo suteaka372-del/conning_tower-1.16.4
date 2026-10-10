@@ -37,6 +37,7 @@ enum ConFunc {
   navi2Tool,
   navi2Settings,
   toggleDashboard,
+  toggleBrowser,
 }
 
 class Controls extends ConsumerStatefulWidget {
@@ -47,7 +48,8 @@ class Controls extends ConsumerStatefulWidget {
       required this.functionMap,
       this.isWideStyle = false,
       this.enableJoystick = false,
-      this.dashboardOpen = false})
+      this.dashboardOpen = false,
+      this.browserOpen = false})
       : _cookieManager = cookieManager;
   final Function() notifyParent;
   final CookieManager? _cookieManager;
@@ -60,6 +62,9 @@ class Controls extends ConsumerStatefulWidget {
 
   /// 横画面でダッシュボードを横並びに表示しているか
   final bool dashboardOpen;
+
+  /// 横画面で右側にブラウザを表示しているか
+  final bool browserOpen;
   final Map<FunctionName, Function> functionMap;
 
   @override
@@ -106,19 +111,20 @@ class _ControlsState extends ConsumerState<Controls> {
     4: ConFunc.goForward,
     5: ConFunc.navi2Settings,
     6: ConFunc.toggleDashboard,
-    7: ConFunc.navi2About,
+    7: ConFunc.toggleBrowser,
+    8: ConFunc.navi2About,
   };
 
   final Map landscapeNaviItems = {
     0: 0, //loadHome
     1: 1, //navi2Tool
     2: 5, //navi2Settings
-    3: 7, //navi2About
+    3: 8, //navi2About
   };
 
   void _onItemTapped(int index, {bool landscape = false}) {
     setState(() {
-      final keepSelection = landscape ? [2, 3, 4, 6] : [2, 3, 4];
+      final keepSelection = landscape ? [2, 3, 4, 6, 7] : [2, 3, 4];
       if (!keepSelection.contains(index)) {
         _selectedIndex = index;
       }
@@ -195,8 +201,12 @@ class _ControlsState extends ConsumerState<Controls> {
       onDestinationSelected: (int index) async {
         HapticFeedback.mediumImpact();
         if (landscapeFuncMap[index] == ConFunc.toggleDashboard) {
-          // ダッシュボードの開閉は WebView を使わないので先に処理する
+          // ダッシュボード / ブラウザの開閉はゲームの WebView を使わないので先に処理する
           widget.functionMap[FunctionName.toggleDashboard]?.call();
+          return;
+        }
+        if (landscapeFuncMap[index] == ConFunc.toggleBrowser) {
+          widget.functionMap[FunctionName.toggleBrowser]?.call();
           return;
         }
         if (widget.isWideStyle) {
@@ -273,6 +283,16 @@ class _ControlsState extends ConsumerState<Controls> {
           ),
         ),
         NavigationRailDestination(
+          icon: Icon(
+            CupertinoIcons.book,
+            color: widget.browserOpen ? CupertinoColors.activeBlue : null,
+          ),
+          label: Text(
+            repairText('ブラウザ', 'Browser'),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        NavigationRailDestination(
           icon: const Icon(
             CupertinoIcons.info,
           ),
@@ -297,6 +317,9 @@ class _ControlsState extends ConsumerState<Controls> {
     switch (func) {
       case ConFunc.toggleDashboard:
         widget.functionMap[FunctionName.toggleDashboard]?.call();
+        break;
+      case ConFunc.toggleBrowser:
+        widget.functionMap[FunctionName.toggleBrowser]?.call();
         break;
       case ConFunc.navi2About:
         selectedIndex = 1;
@@ -353,6 +376,9 @@ class _ControlsState extends ConsumerState<Controls> {
     switch (func) {
       case ConFunc.toggleDashboard:
         widget.functionMap[FunctionName.toggleDashboard]?.call();
+        break;
+      case ConFunc.toggleBrowser:
+        widget.functionMap[FunctionName.toggleBrowser]?.call();
         break;
       case ConFunc.navi2About:
         showPopoverPage(context, const AboutPage());

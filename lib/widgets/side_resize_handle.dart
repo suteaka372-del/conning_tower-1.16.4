@@ -159,6 +159,25 @@ class SideResizeGrip extends StatelessWidget {
   }
 }
 
+/// 横並びモードの右側に出すもの
+enum SidePanel { dashboard, browser }
+
+/// 左メニューのダッシュボード / ブラウザボタンを押したときの開閉
+class SidePanelState {
+  final bool open;
+  final SidePanel panel;
+
+  const SidePanelState({required this.open, required this.panel});
+
+  /// 表示中のものと同じボタン → 閉じる、それ以外 → そのパネルで開く
+  SidePanelState tap(SidePanel tapped) {
+    if (open && panel == tapped) return SidePanelState(open: false, panel: panel);
+    return SidePanelState(open: true, panel: tapped);
+  }
+
+  bool isShowing(SidePanel target) => open && panel == target;
+}
+
 /// 横並びモードの寸法計算 (ゲーム画面は 5:3 を保つ)
 class SideBySideLayout {
   static const double defaultRatio = 0.5;

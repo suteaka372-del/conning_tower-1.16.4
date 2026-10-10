@@ -68,6 +68,7 @@ enum FunctionName {
   portrait,
   naviDashboard,
   toggleDashboard,
+  toggleBrowser,
   none
 }
 
