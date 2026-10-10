@@ -4,7 +4,43 @@ import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
-/// 横並びダッシュボードの境目。長押ししたまま左右に動かして幅を変える
+/// 長押しドラッグ・ダブルタップを受ける共通部分
+class _ResizeGesture extends StatelessWidget {
+  const _ResizeGesture({
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+    required this.onReset,
+    required this.child,
+  });
+
+  final ValueChanged<Offset> onDragStart;
+  final ValueChanged<Offset> onDragUpdate;
+  final VoidCallback onDragEnd;
+  final VoidCallback onReset;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (details) {
+        HapticFeedback.mediumImpact();
+        onDragStart(details.globalPosition);
+      },
+      onLongPressMoveUpdate: (details) => onDragUpdate(details.globalPosition),
+      onLongPressEnd: (_) => onDragEnd(),
+      onLongPressCancel: onDragEnd,
+      onDoubleTap: () {
+        HapticFeedback.lightImpact();
+        onReset();
+      },
+      child: child,
+    );
+  }
+}
+
+/// 横並びダッシュボードの境目の線 (線の上でも長押しドラッグできる)
 class SideResizeHandle extends StatelessWidget {
   const SideResizeHandle({
     super.key,
@@ -25,36 +61,77 @@ class SideResizeHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final separator = CupertinoColors.separator.resolveFrom(context);
-    final grip = CupertinoColors.systemGrey.resolveFrom(context);
+    return SizedBox(
+      width: width,
+      child: _ResizeGesture(
+        onDragStart: onDragStart,
+        onDragUpdate: onDragUpdate,
+        onDragEnd: onDragEnd,
+        onReset: onReset,
+        child: Center(child: Container(width: 1, color: CupertinoColors.separator.resolveFrom(context))),
+      ),
+    );
+  }
+}
+
+/// 境目の上部に重ねる大きなつまみと「幅を元に戻す」ボタン (ゲーム画面の上の余白に出る)
+class SideResizeGrip extends StatelessWidget {
+  const SideResizeGrip({
+    super.key,
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+    required this.onReset,
+    this.dragging = false,
+  });
+
+  /// 重ねる領域の幅 (境目の中心に合わせて置く)
+  static const double width = 64;
+  static const double gripHeight = 96;
+
+  final ValueChanged<Offset> onDragStart;
+  final ValueChanged<Offset> onDragUpdate;
+  final VoidCallback onDragEnd;
+  final VoidCallback onReset;
+  final bool dragging;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = CupertinoColors.systemGrey5.resolveFrom(context).withOpacity(0.85);
+    final pill = dragging ? CupertinoColors.activeBlue : CupertinoColors.systemGrey.resolveFrom(context);
     return SizedBox(
       width: width,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onLongPressStart: (details) {
-                HapticFeedback.mediumImpact();
-                onDragStart(details.globalPosition);
-              },
-              onLongPressMoveUpdate: (details) => onDragUpdate(details.globalPosition),
-              onLongPressEnd: (_) => onDragEnd(),
-              onLongPressCancel: onDragEnd,
-              onDoubleTap: () {
-                HapticFeedback.lightImpact();
-                onReset();
-              },
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Container(width: 1, color: separator),
-                  Container(
-                    width: 5,
-                    height: 44,
-                    decoration: BoxDecoration(color: grip, borderRadius: BorderRadius.circular(3)),
+          _ResizeGesture(
+            onDragStart: onDragStart,
+            onDragUpdate: onDragUpdate,
+            onDragEnd: onDragEnd,
+            onReset: onReset,
+            child: SizedBox(
+              width: width,
+              height: gripHeight,
+              child: Center(
+                child: Container(
+                  width: 36,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    color: background,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: pill, width: 1.5),
                   ),
-                ],
+                  child: Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 4, height: 44, decoration: BoxDecoration(color: pill, borderRadius: BorderRadius.circular(2))),
+                        const SizedBox(width: 5),
+                        Container(width: 4, height: 44, decoration: BoxDecoration(color: pill, borderRadius: BorderRadius.circular(2))),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -63,12 +140,17 @@ class SideResizeHandle extends StatelessWidget {
             button: true,
             child: CupertinoButton(
               padding: EdgeInsets.zero,
-              minSize: width,
+              minSize: 48,
               onPressed: () {
                 HapticFeedback.lightImpact();
                 onReset();
               },
-              child: Icon(CupertinoIcons.arrow_left_right_square, size: width),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: background, shape: BoxShape.circle),
+                child: const Icon(CupertinoIcons.arrow_left_right_square, size: 26),
+              ),
             ),
           ),
         ],

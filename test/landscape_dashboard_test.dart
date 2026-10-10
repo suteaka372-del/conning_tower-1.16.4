@@ -30,15 +30,14 @@ class _CountingBoxState extends State<_CountingBox> {
   Widget build(BuildContext context) => const ColoredBox(color: Color(0xFF00AA00));
 }
 
-enum _Mode { portrait, landscape, sideRailLeft, sideRailRight }
+enum _Mode { portrait, landscape, side }
 
 /// home.dart と同じ組み方:
-/// Row [メニュー?, 区切り?, Expanded(Stack > Flex), 区切り?, メニュー?]
-/// Flex: 縦は [ダッシュボード, ゲーム]、横並びは [ゲーム, 境目, ダッシュボード] (メニューが右なら左右反転)
+/// Row [メニュー?, 区切り?, Expanded(Stack > Flex)]
+/// Flex: 縦は [ダッシュボード, ゲーム]、横並びは [ゲーム, 境目, ダッシュボード]
 Widget _layout(_Mode mode) {
-  final side = mode == _Mode.sideRailLeft || mode == _Mode.sideRailRight;
+  final side = mode == _Mode.side;
   final landscape = mode != _Mode.portrait;
-  final railRight = mode == _Mode.sideRailRight;
   const rail = SizedBox(key: ValueKey("rail"), width: 56, child: Text('rail'));
   const railDivider = SizedBox(key: ValueKey("railDivider"), width: 1);
   final dash = [
@@ -48,7 +47,7 @@ Widget _layout(_Mode mode) {
   return Directionality(
     textDirection: TextDirection.ltr,
     child: Row(children: [
-      if (landscape && !railRight) ...[rail, railDivider],
+      if (landscape) ...[rail, railDivider],
       Expanded(
         key: const ValueKey("main"),
         child: Stack(children: [
@@ -57,7 +56,6 @@ Widget _layout(_Mode mode) {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (!side) const Expanded(key: ValueKey("dashboard"), child: Text('dashboard')),
-              if (side && railRight) ...dash.reversed,
               const Padding(
                 key: ValueKey("game"),
                 padding: EdgeInsets.zero,
@@ -67,12 +65,11 @@ Widget _layout(_Mode mode) {
                   child: Center(child: SizedBox(width: 300, height: 180, child: _CountingBox())),
                 ),
               ),
-              if (side && !railRight) ...dash,
+              if (side) ...dash,
             ],
           ),
         ]),
       ),
-      if (landscape && railRight) ...[railDivider, rail],
     ]),
   );
 }
@@ -83,12 +80,11 @@ void main() {
     for (final mode in [
       _Mode.portrait,
       _Mode.landscape,
-      _Mode.sideRailLeft,
-      _Mode.sideRailRight,
+      _Mode.side,
       _Mode.portrait,
-      _Mode.sideRailRight,
+      _Mode.side,
       _Mode.landscape,
-      _Mode.sideRailLeft,
+      _Mode.side,
     ]) {
       await tester.pumpWidget(_layout(mode));
     }
@@ -177,5 +173,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(CupertinoIcons.slider_horizontal_below_rectangle), findsNothing);
     expect(find.byIcon(CupertinoIcons.info), findsOneWidget);
+  });
+
+  testWidgets('menu does not add its own camera margin when padding is removed', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    localStorage = await SharedPreferences.getInstance();
+    selectedIndex = 0;
+    await S.load(const Locale('ja'));
+    tester.view.physicalSize = const Size(874 * 3, 402 * 3);
+    tester.view.devicePixelRatio = 3;
+    tester.view.padding = const FakeViewPadding(left: 62 * 3, right: 62 * 3);
+    addTearDown(tester.view.reset);
+
+    Widget app({required bool removePadding}) {
+      // Sidebar と同じくスクロールできるように包む
+      final rail = SingleChildScrollView(
+        child: IntrinsicHeight(
+          child: Controls(
+            null,
+            notifyParent: () {},
+            orientation: Orientation.landscape,
+            functionMap: const {},
+          ),
+        ),
+      );
+      return ProviderScope(
+        child: MaterialApp(
+          localizationsDelegates: const [
+            S.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: S.delegate.supportedLocales,
+          locale: const Locale('ja'),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Row(children: [
+                removePadding
+                    ? MediaQuery.removePadding(context: context, removeLeft: true, removeRight: true, child: rail)
+                    : rail,
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(app(removePadding: false));
+    await tester.pumpAndSettle();
+    final withMargin = tester.getSize(find.byType(NavigationRail)).width;
+
+    await tester.pumpWidget(app(removePadding: true));
+    await tester.pumpAndSettle();
+    final withoutMargin = tester.getSize(find.byType(NavigationRail)).width;
+
+    expect(withMargin, greaterThan(withoutMargin + 50)); // the rail adds the 62pt margin by itself
+    expect(withoutMargin, lessThanOrEqualTo(72));
+    expect(tester.getTopLeft(find.byType(NavigationRail)).dx, 0);
   });
 }

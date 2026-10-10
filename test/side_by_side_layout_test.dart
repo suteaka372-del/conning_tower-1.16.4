@@ -1,4 +1,3 @@
-import 'package:conning_tower/utils/screen_orientation.dart';
 import 'package:conning_tower/widgets/side_resize_handle.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -52,40 +51,36 @@ void main() {
     });
   });
 
-  test('camera side from iOS interface orientation', () {
-    expect(ScreenOrientation.cameraSideOf('landscapeLeft'), CameraSide.right);
-    expect(ScreenOrientation.cameraSideOf('landscapeRight'), CameraSide.left);
-    expect(ScreenOrientation.cameraSideOf('portrait'), CameraSide.unknown);
-    expect(ScreenOrientation.cameraSideOf(null), CameraSide.unknown);
-  });
-
-  testWidgets('divider: long press drag, double tap and reset button', (tester) async {
+  testWidgets('large grip: long press drag, double tap and reset button', (tester) async {
     final events = <String>[];
     Offset? last;
     await tester.pumpWidget(CupertinoApp(
-      home: Center(
-        child: SizedBox(
-          height: 300,
-          child: SideResizeHandle(
-            width: SideResizeHandle.defaultWidth,
-            onDragStart: (p) {
-              events.add('start');
-              last = p;
-            },
-            onDragUpdate: (p) {
-              events.add('update');
-              last = p;
-            },
-            onDragEnd: () => events.add('end'),
-            onReset: () => events.add('reset'),
-          ),
+      home: Align(
+        alignment: Alignment.topCenter,
+        child: SideResizeGrip(
+          onDragStart: (p) {
+            events.add('start');
+            last = p;
+          },
+          onDragUpdate: (p) {
+            events.add('update');
+            last = p;
+          },
+          onDragEnd: () => events.add('end'),
+          onReset: () => events.add('reset'),
         ),
       ),
     ));
 
-    final grip = tester.getCenter(find.byType(GestureDetector).first);
-    final gesture = await tester.startGesture(grip);
-    await tester.pump(const Duration(milliseconds: 600)); // long press
+    // touch area is large: 64 x 96 grip + 48pt reset button
+    final gripRect = tester.getRect(find.byType(GestureDetector).first);
+    expect(gripRect.width, greaterThanOrEqualTo(64));
+    expect(gripRect.height, greaterThanOrEqualTo(96));
+
+    // long press near the edge of the grip still works
+    final start = gripRect.topLeft + const Offset(6, 10);
+    final gesture = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 600));
     await gesture.moveBy(const Offset(-80, 0));
     await tester.pump();
     await gesture.up();
@@ -93,24 +88,45 @@ void main() {
     expect(events.first, 'start');
     expect(events, contains('update'));
     expect(events.last, 'end');
-    expect(last!.dx, closeTo(grip.dx - 80, 1));
-
-    // a short drag without long press does nothing
-    events.clear();
-    await tester.dragFrom(grip, const Offset(-50, 0));
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(events.where((e) => e != 'end'), isEmpty);
+    expect(last!.dx, closeTo(start.dx - 80, 1));
 
     events.clear();
-    await tester.tap(find.byIcon(CupertinoIcons.arrow_left_right_square));
+    final reset = tester.getRect(find.byType(CupertinoButton));
+    expect(reset.width, greaterThanOrEqualTo(48));
+    await tester.tapAt(reset.topLeft + const Offset(4, 4)); // edge of the button
     await tester.pump();
     expect(events, ['reset']);
 
     events.clear();
-    await tester.tap(find.byType(GestureDetector).first);
+    await tester.tapAt(gripRect.center);
     await tester.pump(const Duration(milliseconds: 50));
-    await tester.tap(find.byType(GestureDetector).first);
+    await tester.tapAt(gripRect.center);
     await tester.pumpAndSettle();
     expect(events, contains('reset'));
+  });
+
+  testWidgets('thin divider line is also draggable', (tester) async {
+    final events = <String>[];
+    await tester.pumpWidget(CupertinoApp(
+      home: Center(
+        child: SizedBox(
+          height: 300,
+          child: SideResizeHandle(
+            width: SideResizeHandle.defaultWidth,
+            onDragStart: (_) => events.add('start'),
+            onDragUpdate: (_) => events.add('update'),
+            onDragEnd: () => events.add('end'),
+            onReset: () => events.add('reset'),
+          ),
+        ),
+      ),
+    ));
+    final gesture = await tester.startGesture(tester.getCenter(find.byType(SideResizeHandle)));
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await gesture.up();
+    expect(events.first, 'start');
+    expect(events.last, 'end');
   });
 }
