@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/local_navigator.dart';
@@ -22,6 +23,7 @@ import '../../providers/generatable/kancolle_event_ship_tags_provider.dart';
 import '../../providers/generatable/kancolle_localization_provider.dart';
 import '../../models/data/kcsapi/start2/get_data_entity.dart';
 import '../../models/feature/kancolle/squad.dart';
+import '../../widgets/kancolle_anti_air_cut_in_section.dart';
 import '../../widgets/kancolle_attack_rate_section.dart';
 import '../../widgets/kancolle_repair_timer_section.dart';
 import '../../widgets/kancolle_squad_slot_info.dart';
@@ -342,6 +344,13 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                                   '${antiAircraftList.reduce((value, element) => value + element)}'),
                                             ),
                                             CupertinoListTile(
+                                              subtitle: Text(repairText(
+                                                  '対空カットイン (推定)',
+                                                  'Anti-air cut-in (estimate)')),
+                                              title: Text(fleetAntiAirCutInText(
+                                                  squad.ships, shipInfo)),
+                                            ),
+                                            CupertinoListTile(
                                               subtitle: Text(S.current
                                                   .KCDashboardShipASW),
                                               title: Text(
@@ -480,6 +489,7 @@ class ShipInfo extends StatelessWidget {
               squad: squad!,
               shipInfo: shipInfo,
             ),
+          KancolleAntiAirCutInSection(ship: ship, shipInfo: shipInfo),
           CupertinoListSection.insetGrouped(
             margin: tabBottomListMargin,
             children: [
