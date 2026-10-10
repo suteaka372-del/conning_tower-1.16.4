@@ -165,7 +165,8 @@ class _DashboardState extends ConsumerState<Dashboard> {
             initialIndex: _selectIndex ?? 0,
             tabs: tabs,
             contents: widget.children,
-            childPadding: const EdgeInsets.fromLTRB(0, 40, 0, 0),
+            // 横並びモード専用 (上の余白はなし)
+            childPadding: EdgeInsets.zero,
             colors: colors,
           ),
         );

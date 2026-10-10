@@ -30,34 +30,68 @@ class _CountingBoxState extends State<_CountingBox> {
   Widget build(BuildContext context) => const ColoredBox(color: Color(0xFF00AA00));
 }
 
-/// home.dart と同じ組み方: 縦は [ダッシュボード, ゲーム]、横並びは [ゲーム, 区切り, ダッシュボード]
-Widget _layout(bool sideBySide) => Directionality(
-      textDirection: TextDirection.ltr,
-      child: Flex(
-        direction: sideBySide ? Axis.horizontal : Axis.vertical,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (!sideBySide) const Expanded(key: ValueKey("dashboard"), child: Text('dashboard')),
-          const Padding(
-            key: ValueKey("game"),
-            padding: EdgeInsets.zero,
-            child: SizedBox(width: 300, height: 180, child: _CountingBox()),
+enum _Mode { portrait, landscape, sideRailLeft, sideRailRight }
+
+/// home.dart と同じ組み方:
+/// Row [メニュー?, 区切り?, Expanded(Stack > Flex), 区切り?, メニュー?]
+/// Flex: 縦は [ダッシュボード, ゲーム]、横並びは [ゲーム, 境目, ダッシュボード] (メニューが右なら左右反転)
+Widget _layout(_Mode mode) {
+  final side = mode == _Mode.sideRailLeft || mode == _Mode.sideRailRight;
+  final landscape = mode != _Mode.portrait;
+  final railRight = mode == _Mode.sideRailRight;
+  const rail = SizedBox(key: ValueKey("rail"), width: 56, child: Text('rail'));
+  const railDivider = SizedBox(key: ValueKey("railDivider"), width: 1);
+  final dash = [
+    const SizedBox(key: ValueKey("divider"), width: 18),
+    const SizedBox(key: ValueKey("dashboard"), width: 300, height: 400, child: Text('dashboard')),
+  ];
+  return Directionality(
+    textDirection: TextDirection.ltr,
+    child: Row(children: [
+      if (landscape && !railRight) ...[rail, railDivider],
+      Expanded(
+        key: const ValueKey("main"),
+        child: Stack(children: [
+          Flex(
+            direction: side ? Axis.horizontal : Axis.vertical,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (!side) const Expanded(key: ValueKey("dashboard"), child: Text('dashboard')),
+              if (side && railRight) ...dash.reversed,
+              const Padding(
+                key: ValueKey("game"),
+                padding: EdgeInsets.zero,
+                child: SizedBox(
+                  width: 300,
+                  height: 180,
+                  child: Center(child: SizedBox(width: 300, height: 180, child: _CountingBox())),
+                ),
+              ),
+              if (side && !railRight) ...dash,
+            ],
           ),
-          if (sideBySide) ...[
-            const SizedBox(key: ValueKey("divider"), width: 1),
-            const SizedBox(key: ValueKey("dashboard"), width: 300, height: 400, child: Text('dashboard')),
-          ],
-        ],
+        ]),
       ),
-    );
+      if (landscape && railRight) ...[railDivider, rail],
+    ]),
+  );
+}
 
 void main() {
-  testWidgets('game view is not recreated when switching portrait <-> side by side', (tester) async {
+  testWidgets('game view is not recreated when switching layouts (portrait / landscape / side by side)', (tester) async {
     _CountingBox.created = 0;
-    await tester.pumpWidget(_layout(false));
-    await tester.pumpWidget(_layout(true));
-    await tester.pumpWidget(_layout(false));
-    await tester.pumpWidget(_layout(true));
+    for (final mode in [
+      _Mode.portrait,
+      _Mode.landscape,
+      _Mode.sideRailLeft,
+      _Mode.sideRailRight,
+      _Mode.portrait,
+      _Mode.sideRailRight,
+      _Mode.landscape,
+      _Mode.sideRailLeft,
+    ]) {
+      await tester.pumpWidget(_layout(mode));
+    }
     expect(_CountingBox.created, 1);
     expect(find.text('dashboard'), findsOneWidget);
   });

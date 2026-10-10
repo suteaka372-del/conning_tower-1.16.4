@@ -24,6 +24,8 @@ import 'package:conning_tower/widgets/controls.dart';
 import 'package:conning_tower/widgets/dialog.dart';
 import 'package:conning_tower/widgets/indexed_stack.dart';
 import 'package:conning_tower/widgets/modal_sheets.dart';
+import 'package:conning_tower/utils/screen_orientation.dart';
+import 'package:conning_tower/widgets/side_resize_handle.dart';
 import 'package:conning_tower/widgets/sidebar.dart';
 import 'package:conning_tower/widgets/texts.dart';
 import 'package:flutter/cupertino.dart';
@@ -45,12 +47,24 @@ class HomePage extends ConsumerStatefulWidget {
   HomePageState createState() => HomePageState();
 }
 
-class HomePageState extends ConsumerState<HomePage> {
+class HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver {
   late Alignment fabAlignment;
   late bool showControls;
 
   /// 横画面でゲーム画面の右にダッシュボードを並べるか (左メニューのボタンで切り替え)
   bool landscapeDashboard = false;
+
+  /// 横並び時のダッシュボード幅の割合 (境目のドラッグで変更、既定は半分)
+  double sideRatio = SideBySideLayout.defaultRatio;
+
+  /// 境目をドラッグ中のプレビュー位置 (null ならドラッグしていない)
+  double? _dragPreviewX;
+  SideBySideLayout? _sideLayout;
+  bool _gameFirst = true;
+  final GlobalKey _mainAreaKey = GlobalKey();
+
+  /// 横画面でカメラがどちら側か (左メニューをカメラ側に置く)
+  CameraSide cameraSide = CameraSide.unknown;
   bool showNewVersion = false;
   bool setUp = true;
   PackageInfo _packageInfo = PackageInfo(
@@ -69,7 +83,10 @@ class HomePageState extends ConsumerState<HomePage> {
     showControls = true;
     try {
       landscapeDashboard = localStorage.getBool("landscapeDashboard") ?? false;
+      sideRatio = localStorage.getDouble("landscapeDashboardRatio") ?? SideBySideLayout.defaultRatio;
     } catch (_) {}
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateCameraSide());
 
     _initPackageInfo();
 
@@ -81,8 +98,63 @@ class HomePageState extends ConsumerState<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+  }
+
+  @override
+  void didChangeMetrics() {
+    // 回転が終わってから向きを問い合わせる
+    Future.delayed(const Duration(milliseconds: 300), _updateCameraSide);
+  }
+
+  Future<void> _updateCameraSide() async {
+    final side = await ScreenOrientation.cameraSide();
+    if (mounted && side != cameraSide) setState(() => cameraSide = side);
+  }
+
+  void _saveSideRatio() {
+    try {
+      localStorage.setDouble("landscapeDashboardRatio", sideRatio);
+    } catch (_) {}
+  }
+
+  double? _localX(Offset globalPosition) {
+    final box = _mainAreaKey.currentContext?.findRenderObject();
+    if (box is! RenderBox) return null;
+    return box.globalToLocal(globalPosition).dx;
+  }
+
+  void _onSideDragUpdate(Offset globalPosition) {
+    final layout = _sideLayout;
+    final x = _localX(globalPosition);
+    if (layout == null || x == null) return;
+    final width = layout.dashboardWidthAt(x, gameFirst: _gameFirst);
+    setState(() => _dragPreviewX = layout.handleCenterFor(width, gameFirst: _gameFirst));
+  }
+
+  void _onSideDragEnd() {
+    final layout = _sideLayout;
+    final x = _dragPreviewX;
+    if (layout == null || x == null) {
+      setState(() => _dragPreviewX = null);
+      return;
+    }
+    final width = layout.dashboardWidthAt(x, gameFirst: _gameFirst);
+    setState(() {
+      sideRatio = layout.ratioFor(width);
+      _dragPreviewX = null;
+    });
+    _saveSideRatio();
+  }
+
+  void _resetSideRatio() {
+    setState(() {
+      sideRatio = SideBySideLayout.defaultRatio;
+      _dragPreviewX = null;
+    });
+    _saveSideRatio();
   }
 
   Future<void> _initPackageInfo() async {
@@ -379,8 +451,13 @@ class HomePageState extends ConsumerState<HomePage> {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
             overlays: SystemUiOverlay.values);
       }
-      // 横画面でダッシュボードを並べるときは、左側の安全領域 (カメラ部分) まで使って幅を確保する
+      // 横画面でダッシュボードを並べるときは、左右の安全領域 (カメラ部分) まで使って幅を確保する。
+      // カメラと重なってよいのは左メニューだけなので、メニューをカメラ側に置く
       final sideBySide = orientation == Orientation.landscape && landscapeDashboard;
+      final showRail = showControls && orientation == Orientation.landscape;
+      final railOnRight = sideBySide && cameraSide == CameraSide.right;
+      _gameFirst = !railOnRight;
+      if (railOnRight) fabAlignment = const Alignment(-1.0, 0.3);
       return Scaffold(
           resizeToAvoidBottomInset: orientation == Orientation.portrait,
           bottomNavigationBar: orientation == Orientation.portrait
@@ -397,6 +474,7 @@ class HomePageState extends ConsumerState<HomePage> {
             top: false,
             bottom: false,
             left: !sideBySide,
+            right: !sideBySide,
             child: CircularMenu(
               toggleButtonBoxShadow: const [],
               alignment: fabAlignment,
@@ -467,17 +545,19 @@ class HomePageState extends ConsumerState<HomePage> {
               ],
               backgroundWidget: Row(
                 children: <Widget>[
-                  if (showControls && orientation == Orientation.landscape)
+                  if (showRail && !railOnRight) ...[
                     Sidebar(
+                      key: const ValueKey("rail"),
                       notifyParent: () => setState(() {}),
                       cookieManager: widget.cookieManager,
                       functionMap: functionMap,
                       dashboardOpen: landscapeDashboard,
                     ),
-                  if (showControls && orientation == Orientation.landscape)
-                    const VerticalDivider(thickness: 1, width: 1),
+                    const VerticalDivider(key: ValueKey("railDivider"), thickness: 1, width: 1),
+                  ],
                   // This is the main content.
                   Expanded(
+                    key: const ValueKey("main"),
                     child: LayoutBuilder(builder: (context, box) {
                       double aspectRatio = 5 / 3; // The aspect ratio is 5:3
                       double parentAspectRatio = box.maxWidth / box.maxHeight;
@@ -495,19 +575,21 @@ class HomePageState extends ConsumerState<HomePage> {
                         // If the aspect ratio of the parent element is less than or equal to the aspect ratio of the child element, the height is calculated by width
                         childHeight = childWidth / aspectRatio;
                       }
-                      // 横並び: 右にダッシュボード、残りの幅でゲーム画面 (5:3)
+                      // 横並び: ゲーム画面 (5:3) | 境目 | ダッシュボード (メニューがカメラ側=右のときは左右反転)
                       double sideDashboardWidth = 0;
+                      double gameAreaWidth = childWidth;
+                      double gameAreaHeight = childHeight;
                       if (sideBySide) {
-                        sideDashboardWidth = (box.maxWidth * 0.42).clamp(280.0, 420.0);
-                        if (box.maxWidth - sideDashboardWidth < 200) {
-                          sideDashboardWidth = box.maxWidth / 2;
-                        }
-                        childWidth = box.maxWidth - sideDashboardWidth - 1;
-                        childHeight = childWidth / aspectRatio;
-                        if (childHeight > box.maxHeight) {
-                          childHeight = box.maxHeight;
-                          childWidth = childHeight * aspectRatio;
-                        }
+                        final layout = SideBySideLayout(
+                            ratio: sideRatio, totalWidth: box.maxWidth, maxHeight: box.maxHeight);
+                        _sideLayout = layout;
+                        sideDashboardWidth = layout.dashboardWidth;
+                        gameAreaWidth = layout.gameAreaWidth;
+                        gameAreaHeight = box.maxHeight;
+                        childWidth = layout.gameSize.width;
+                        childHeight = layout.gameSize.height;
+                      } else {
+                        _sideLayout = null;
                       }
                       double dashboardHeight = box.maxHeight - childHeight;
                       if (enableBottomPadding) {
@@ -540,38 +622,51 @@ class HomePageState extends ConsumerState<HomePage> {
                           alignment: Alignment.center,
                           width: double.infinity,
                           height: double.infinity,
-                          // 縦横で同じ Flex を使い向きだけ変える (ゲーム画面を作り直さず、再読み込みさせないため)
-                          child: Flex(
-                            direction: sideBySide ? Axis.horizontal : Axis.vertical,
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          // 縦横で同じ Stack > Flex を使い向きだけ変える (ゲーム画面を作り直さず、再読み込みさせないため)
+                          child: Stack(
+                            key: _mainAreaKey,
                             children: [
-                              if (!sideBySide && enableDashboard && settings.showDashboardInHome)
-                                Expanded(
-                                    key: const ValueKey("dashboard"),
-                                    child: settings.useKancolleListener
-                                        ? Dashboard.kancolle(notifyParent: () => setState(() {}))
-                                        : Dashboard.general(notifyParent: () => setState(() {}))),
-                              Padding(
-                                key: const ValueKey("game"),
-                                padding: EdgeInsets.only(
-                                    bottom: !sideBySide && enableBottomPadding ? bottomPaddingHeightValue : 0),
-                                child: SizedBox(
-                                  height: childHeight,
-                                  width: childWidth,
-                                  child: const AppWebView(),
-                                ),
+                              Flex(
+                                direction: sideBySide ? Axis.horizontal : Axis.vertical,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (!sideBySide && enableDashboard && settings.showDashboardInHome)
+                                    Expanded(
+                                        key: const ValueKey("dashboard"),
+                                        child: settings.useKancolleListener
+                                            ? Dashboard.kancolle(notifyParent: () => setState(() {}))
+                                            : Dashboard.general(notifyParent: () => setState(() {}))),
+                                  if (sideBySide && !_gameFirst)
+                                    ...sideDashboard(sideDashboardWidth, box.maxHeight, settings.useKancolleListener),
+                                  Padding(
+                                    key: const ValueKey("game"),
+                                    padding: EdgeInsets.only(
+                                        bottom: !sideBySide && enableBottomPadding ? bottomPaddingHeightValue : 0),
+                                    child: SizedBox(
+                                      height: gameAreaHeight,
+                                      width: gameAreaWidth,
+                                      child: Center(
+                                        child: SizedBox(
+                                          height: childHeight,
+                                          width: childWidth,
+                                          child: const AppWebView(),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (sideBySide && _gameFirst)
+                                    ...sideDashboard(sideDashboardWidth, box.maxHeight, settings.useKancolleListener),
+                                ],
                               ),
-                              if (sideBySide) ...[
-                                const VerticalDivider(key: ValueKey("divider"), thickness: 1, width: 1),
-                                SizedBox(
-                                  key: const ValueKey("dashboard"),
-                                  width: sideDashboardWidth,
-                                  height: box.maxHeight,
-                                  child: settings.useKancolleListener
-                                      ? Dashboard.kancolle(notifyParent: () => setState(() {}))
-                                      : Dashboard.general(notifyParent: () => setState(() {})),
+                              if (sideBySide && _dragPreviewX != null)
+                                Positioned(
+                                  left: _dragPreviewX! - 1.5,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: IgnorePointer(
+                                    child: Container(width: 3, color: CupertinoColors.activeBlue),
+                                  ),
                                 ),
-                              ],
                             ],
                           ),
                         ),
@@ -584,11 +679,49 @@ class HomePageState extends ConsumerState<HomePage> {
                     );
                   }),
                 ),
+                  if (showRail && railOnRight) ...[
+                    const VerticalDivider(key: ValueKey("railDivider"), thickness: 1, width: 1),
+                    Sidebar(
+                      key: const ValueKey("rail"),
+                      notifyParent: () => setState(() {}),
+                      cookieManager: widget.cookieManager,
+                      functionMap: functionMap,
+                      dashboardOpen: landscapeDashboard,
+                    ),
+                  ],
               ],
             ),
           ),
         ),
       );
     });
+  }
+
+  /// 横並びのダッシュボードと境目 (ゲーム画面の隣に境目が来るように並べる)
+  List<Widget> sideDashboard(double width, double height, bool kancolle) {
+    final handle = SideResizeHandle(
+      key: const ValueKey("divider"),
+      width: SideResizeHandle.defaultWidth,
+      onDragStart: _onSideDragUpdate,
+      onDragUpdate: _onSideDragUpdate,
+      onDragEnd: _onSideDragEnd,
+      onReset: _resetSideRatio,
+    );
+    final dashboard = SizedBox(
+      key: const ValueKey("dashboard"),
+      width: width,
+      height: height,
+      // 左右の安全領域は外側で使い切っているので、中では上と左右の余白を取らない (下はホームバー分を残す)
+      child: MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        removeLeft: true,
+        removeRight: true,
+        child: kancolle
+            ? Dashboard.kancolleWithBottomTab(notifyParent: () => setState(() {}))
+            : Dashboard.generalWithBottomTab(notifyParent: () => setState(() {})),
+      ),
+    );
+    return _gameFirst ? [handle, dashboard] : [dashboard, handle];
   }
 }

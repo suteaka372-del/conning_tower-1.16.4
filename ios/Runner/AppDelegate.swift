@@ -18,6 +18,33 @@ import flutter_local_notifications
     }
 
     GeneratedPluginRegistrant.register(with: self)
+    registerOrientationChannel()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  /// Tells Flutter which way the screen is rotated, so the landscape menu can be placed on the camera side.
+  /// (iOS reports the same safe area on both sides in landscape, so Flutter alone cannot tell.)
+  private func registerOrientationChannel() {
+    guard let controller = window?.rootViewController as? FlutterViewController else { return }
+    let channel = FlutterMethodChannel(name: "conning_tower/orientation", binaryMessenger: controller.binaryMessenger)
+    channel.setMethodCallHandler { [weak controller] (call, result) in
+      guard call.method == "interfaceOrientation" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      var orientation: UIInterfaceOrientation = .unknown
+      if #available(iOS 13.0, *) {
+        orientation = controller?.view.window?.windowScene?.interfaceOrientation ?? .unknown
+      } else {
+        orientation = UIApplication.shared.statusBarOrientation
+      }
+      switch orientation {
+      case .landscapeLeft: result("landscapeLeft")   // home indicator on the left, camera on the right
+      case .landscapeRight: result("landscapeRight") // home indicator on the right, camera on the left
+      case .portrait: result("portrait")
+      case .portraitUpsideDown: result("portraitUpsideDown")
+      default: result("unknown")
+      }
+    }
   }
 }
