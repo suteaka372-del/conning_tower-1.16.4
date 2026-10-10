@@ -28,6 +28,7 @@ import 'map_state.dart';
 import 'operation_queue.dart';
 import 'quest_assistant.dart';
 import 'raw_data.dart';
+import 'quest_fleet_condition.dart';
 import 'quest_progress.dart';
 import 'repair_timer.dart';
 import 'sea_force_base.dart';
@@ -739,21 +740,30 @@ class KancolleData {
           tracker.onQuestStart(id);
         case '/api_req_map/start' || '/api_req_map/next':
           if (apiData is! Map) return;
-          if (path == '/api_req_map/start') tracker.onSortieStart();
+          if (path == '/api_req_map/start') {
+            tracker.sortieFleet = _intOf(params?['api_deck_id']);
+            tracker.onSortieStart();
+          }
           tracker.onMapPoint(
             mapId: (_intOf(apiData['api_maparea_id']) ?? 0) * 10 + (_intOf(apiData['api_mapinfo_no']) ?? 0),
             eventId: _intOf(apiData['api_event_id']) ?? 0,
             isEndPoint: _intOf(apiData['api_next']) == 0,
+            cell: _intOf(apiData['api_no']),
+            fleet: questFleet(tracker.sortieFleet),
           );
         case '/api_req_sortie/battleresult' || '/api_req_combined_battle/battleresult':
           if (apiData is! Map) return;
           tracker.onBattleResult(
             rank: '${apiData['api_win_rank'] ?? ''}',
             sunkEnemyShipTypes: sunkEnemyShipTypes(),
+            fleet: questFleet(tracker.sortieFleet),
           );
+        case '/api_req_practice/battle':
+          tracker.practiceFleet = _intOf(params?['api_deck_id']);
+          return;
         case '/api_req_practice/battle_result':
           if (apiData is! Map) return;
-          tracker.onPracticeResult('${apiData['api_win_rank'] ?? ''}');
+          tracker.onPracticeResult('${apiData['api_win_rank'] ?? ''}', fleet: questFleet(tracker.practiceFleet));
         case '/api_req_mission/result':
           if (apiData is! Map) return;
           final deckId = _intOf(params?['api_deck_id']);
@@ -777,7 +787,7 @@ class KancolleData {
           tracker.onDestruction(ids.length);
         case '/api_req_kousyou/destroyitem2':
           final ids = '${params?['api_slotitem_ids'] ?? ''}'.split(',').map(int.tryParse).whereType<int>();
-          tracker.onDiscard([
+          tracker.onDiscard(secretaryFleet: questFleet(1), [
             for (final id in ids)
               if (fleet.equipment[id] case final equipment?)
                 DiscardedEquipment(
@@ -798,6 +808,12 @@ class KancolleData {
     } catch (e, s) {
       log("quest progress tracking failed at $path: $e", stackTrace: s);
     }
+  }
+
+  /// 任務の編成条件の判定に使う艦隊 (艦隊番号 1〜4)
+  QuestFleet? questFleet(int? number) {
+    if (number == null || number < 1 || number > squads.length) return null;
+    return QuestFleet.fromShips(number, squads[number - 1].ships, dataInfo.shipInfo);
   }
 
   /// 直前の戦闘で撃沈した敵艦の艦種
