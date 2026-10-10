@@ -93,7 +93,7 @@ class WebController extends _$WebController {
   WebUri currUrl = WebUri('');
   List<WebUri> currPageUrls = [];
   bool isScreenResize = false;
-  CookieManager cookieManager = CookieManager.instance();
+  late CookieManager cookieManager = CookieManager.instance();
 
   bool inKancolleWindow = false;
 

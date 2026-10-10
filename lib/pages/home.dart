@@ -48,6 +48,9 @@ class HomePage extends ConsumerStatefulWidget {
 class HomePageState extends ConsumerState<HomePage> {
   late Alignment fabAlignment;
   late bool showControls;
+
+  /// 横画面でゲーム画面の右にダッシュボードを並べるか (左メニューのボタンで切り替え)
+  bool landscapeDashboard = false;
   bool showNewVersion = false;
   bool setUp = true;
   PackageInfo _packageInfo = PackageInfo(
@@ -64,6 +67,9 @@ class HomePageState extends ConsumerState<HomePage> {
     super.initState();
     
     showControls = true;
+    try {
+      landscapeDashboard = localStorage.getBool("landscapeDashboard") ?? false;
+    } catch (_) {}
 
     _initPackageInfo();
 
@@ -258,6 +264,11 @@ class HomePageState extends ConsumerState<HomePage> {
         navigatorToCupertino(context,
             Scaffold(body: DashboardPage(notifyParent: () => setState(() {}))));
       },
+      FunctionName.toggleDashboard: () {
+        HapticFeedback.mediumImpact();
+        setState(() => landscapeDashboard = !landscapeDashboard);
+        localStorage.setBool("landscapeDashboard", landscapeDashboard);
+      },
       FunctionName.showTaskPage: () async {
         showCupertinoModalBottomSheet(
           expand: true,
@@ -368,6 +379,8 @@ class HomePageState extends ConsumerState<HomePage> {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
             overlays: SystemUiOverlay.values);
       }
+      // 横画面でダッシュボードを並べるときは、左側の安全領域 (カメラ部分) まで使って幅を確保する
+      final sideBySide = orientation == Orientation.landscape && landscapeDashboard;
       return Scaffold(
           resizeToAvoidBottomInset: orientation == Orientation.portrait,
           bottomNavigationBar: orientation == Orientation.portrait
@@ -383,6 +396,7 @@ class HomePageState extends ConsumerState<HomePage> {
           body: SafeArea(
             top: false,
             bottom: false,
+            left: !sideBySide,
             child: CircularMenu(
               toggleButtonBoxShadow: const [],
               alignment: fabAlignment,
@@ -458,6 +472,7 @@ class HomePageState extends ConsumerState<HomePage> {
                       notifyParent: () => setState(() {}),
                       cookieManager: widget.cookieManager,
                       functionMap: functionMap,
+                      dashboardOpen: landscapeDashboard,
                     ),
                   if (showControls && orientation == Orientation.landscape)
                     const VerticalDivider(thickness: 1, width: 1),
@@ -479,6 +494,20 @@ class HomePageState extends ConsumerState<HomePage> {
                       } else {
                         // If the aspect ratio of the parent element is less than or equal to the aspect ratio of the child element, the height is calculated by width
                         childHeight = childWidth / aspectRatio;
+                      }
+                      // 横並び: 右にダッシュボード、残りの幅でゲーム画面 (5:3)
+                      double sideDashboardWidth = 0;
+                      if (sideBySide) {
+                        sideDashboardWidth = (box.maxWidth * 0.42).clamp(280.0, 420.0);
+                        if (box.maxWidth - sideDashboardWidth < 200) {
+                          sideDashboardWidth = box.maxWidth / 2;
+                        }
+                        childWidth = box.maxWidth - sideDashboardWidth - 1;
+                        childHeight = childWidth / aspectRatio;
+                        if (childHeight > box.maxHeight) {
+                          childHeight = box.maxHeight;
+                          childWidth = childHeight * aspectRatio;
+                        }
                       }
                       double dashboardHeight = box.maxHeight - childHeight;
                       if (enableBottomPadding) {
@@ -511,22 +540,38 @@ class HomePageState extends ConsumerState<HomePage> {
                           alignment: Alignment.center,
                           width: double.infinity,
                           height: double.infinity,
-                          child: Column(
+                          // 縦横で同じ Flex を使い向きだけ変える (ゲーム画面を作り直さず、再読み込みさせないため)
+                          child: Flex(
+                            direction: sideBySide ? Axis.horizontal : Axis.vertical,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              if (enableDashboard && settings.showDashboardInHome)
+                              if (!sideBySide && enableDashboard && settings.showDashboardInHome)
                                 Expanded(
+                                    key: const ValueKey("dashboard"),
                                     child: settings.useKancolleListener
                                         ? Dashboard.kancolle(notifyParent: () => setState(() {}))
                                         : Dashboard.general(notifyParent: () => setState(() {}))),
                               Padding(
-                                padding: EdgeInsets.only(bottom: enableBottomPadding ? bottomPaddingHeightValue : 0),
+                                key: const ValueKey("game"),
+                                padding: EdgeInsets.only(
+                                    bottom: !sideBySide && enableBottomPadding ? bottomPaddingHeightValue : 0),
                                 child: SizedBox(
                                   height: childHeight,
                                   width: childWidth,
                                   child: const AppWebView(),
                                 ),
                               ),
+                              if (sideBySide) ...[
+                                const VerticalDivider(key: ValueKey("divider"), thickness: 1, width: 1),
+                                SizedBox(
+                                  key: const ValueKey("dashboard"),
+                                  width: sideDashboardWidth,
+                                  height: box.maxHeight,
+                                  child: settings.useKancolleListener
+                                      ? Dashboard.kancolle(notifyParent: () => setState(() {}))
+                                      : Dashboard.general(notifyParent: () => setState(() {})),
+                                ),
+                              ],
                             ],
                           ),
                         ),

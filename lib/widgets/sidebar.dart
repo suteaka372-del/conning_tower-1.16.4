@@ -15,11 +15,13 @@ class Sidebar extends ConsumerWidget {
     required this.notifyParent,
     required this.cookieManager,
     required this.functionMap,
+    this.dashboardOpen = false,
   });
 
   final Function() notifyParent;
   final CookieManager? cookieManager;
   final Map<FunctionName, Function> functionMap;
+  final bool dashboardOpen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,6 +42,7 @@ class Sidebar extends ConsumerWidget {
             functionMap: functionMap,
             isWideStyle: true,
             enableJoystick: Platform.isIOS,
+            dashboardOpen: dashboardOpen,
           )));
       } else {
         return Center(
@@ -63,6 +66,7 @@ class Sidebar extends ConsumerWidget {
                       notifyParent: notifyParent,
                       orientation: Orientation.landscape,
                       functionMap: functionMap,
+                      dashboardOpen: dashboardOpen,
                     ),
                   ),
                 ),
@@ -82,6 +86,7 @@ class Sidebar extends ConsumerWidget {
             orientation: Orientation.landscape,
             functionMap: functionMap,
             isWideStyle: size.width >= 1024,
+            dashboardOpen: dashboardOpen,
           )));
     }
   }

@@ -4,6 +4,7 @@ import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/pages/about_page.dart';
 import 'package:conning_tower/pages/settings_page.dart';
 import 'package:conning_tower/pages/tools_page.dart';
@@ -35,6 +36,7 @@ enum ConFunc {
   navi2About,
   navi2Tool,
   navi2Settings,
+  toggleDashboard,
 }
 
 class Controls extends ConsumerStatefulWidget {
@@ -44,13 +46,20 @@ class Controls extends ConsumerStatefulWidget {
       required this.orientation,
       required this.functionMap,
       this.isWideStyle = false,
-      this.enableJoystick = false})
-      : cookieManager = cookieManager ?? CookieManager.instance();
+      this.enableJoystick = false,
+      this.dashboardOpen = false})
+      : _cookieManager = cookieManager;
   final Function() notifyParent;
-  late final CookieManager cookieManager;
+  final CookieManager? _cookieManager;
+
+  /// 必要になったときに取得する (テストなど WebView のない環境でも Controls を作れるように)
+  CookieManager get cookieManager => _cookieManager ?? CookieManager.instance();
   final Orientation orientation;
   final bool isWideStyle;
   final bool enableJoystick;
+
+  /// 横画面でダッシュボードを横並びに表示しているか
+  final bool dashboardOpen;
   final Map<FunctionName, Function> functionMap;
 
   @override
@@ -88,9 +97,29 @@ class _ControlsState extends ConsumerState<Controls> {
     3: 6, //navi2About
   };
 
-  void _onItemTapped(int index) {
+  /// 横画面の左メニュー (設定と情報の間にダッシュボード)
+  final Map landscapeFuncMap = {
+    0: ConFunc.loadHome,
+    1: ConFunc.navi2Tool,
+    2: ConFunc.refresh,
+    3: ConFunc.goBack,
+    4: ConFunc.goForward,
+    5: ConFunc.navi2Settings,
+    6: ConFunc.toggleDashboard,
+    7: ConFunc.navi2About,
+  };
+
+  final Map landscapeNaviItems = {
+    0: 0, //loadHome
+    1: 1, //navi2Tool
+    2: 5, //navi2Settings
+    3: 7, //navi2About
+  };
+
+  void _onItemTapped(int index, {bool landscape = false}) {
     setState(() {
-      if (![2, 3, 4].contains(index)) {
+      final keepSelection = landscape ? [2, 3, 4, 6] : [2, 3, 4];
+      if (!keepSelection.contains(index)) {
         _selectedIndex = index;
       }
     });
@@ -104,7 +133,8 @@ class _ControlsState extends ConsumerState<Controls> {
     enableAutoLoadHomeUrl = ref.watch(settingsProvider.select((value) => value.enableAutoLoadHomeUrl));
     customHomeUrl = ref.watch(settingsProvider.select((value) => value.customHomeUrl));
 
-    _selectedIndex = naviItems[flnp.index];
+    final isLandscape = widget.orientation != Orientation.portrait;
+    _selectedIndex = (isLandscape ? landscapeNaviItems : naviItems)[flnp.index];
     if (selectedIndex == 0) _selectedIndex = 0;
 
     if (widget.orientation == Orientation.portrait) {
@@ -164,10 +194,15 @@ class _ControlsState extends ConsumerState<Controls> {
       groupAlignment: 0,
       onDestinationSelected: (int index) async {
         HapticFeedback.mediumImpact();
+        if (landscapeFuncMap[index] == ConFunc.toggleDashboard) {
+          // ダッシュボードの開閉は WebView を使わないので先に処理する
+          widget.functionMap[FunctionName.toggleDashboard]?.call();
+          return;
+        }
         if (widget.isWideStyle) {
-          _onTapPopover(index, context, controller);
+          _onTapPopover(index, context, controller, landscape: true);
         } else {
-          _onTap(index, context, controller, flnp);
+          _onTap(index, context, controller, flnp, landscape: true);
         }
       },
       trailing: GestureDetector(
@@ -228,6 +263,16 @@ class _ControlsState extends ConsumerState<Controls> {
           label: Text(S.of(context).SettingsButton),
         ),
         NavigationRailDestination(
+          icon: Icon(
+            CupertinoIcons.slider_horizontal_below_rectangle,
+            color: widget.dashboardOpen ? CupertinoColors.activeBlue : null,
+          ),
+          label: Text(
+            repairText('ダッシュボード', 'Dashboard'),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        NavigationRailDestination(
           icon: const Icon(
             CupertinoIcons.info,
           ),
@@ -244,11 +289,15 @@ class _ControlsState extends ConsumerState<Controls> {
     int value,
     BuildContext context,
     InAppWebViewController controller,
-    FunctionLayerNavigator navigator,
-  ) {
-    _onItemTapped(value);
-    var func = funcMap[value];
+    FunctionLayerNavigator navigator, {
+    bool landscape = false,
+  }) {
+    _onItemTapped(value, landscape: landscape);
+    var func = (landscape ? landscapeFuncMap : funcMap)[value];
     switch (func) {
+      case ConFunc.toggleDashboard:
+        widget.functionMap[FunctionName.toggleDashboard]?.call();
+        break;
       case ConFunc.navi2About:
         selectedIndex = 1;
         widget.notifyParent();
@@ -296,11 +345,15 @@ class _ControlsState extends ConsumerState<Controls> {
   void _onTapPopover(
     int value,
     BuildContext context,
-    InAppWebViewController controller,
-  ) {
-    _onItemTapped(value);
-    var func = funcMap[value];
+    InAppWebViewController controller, {
+    bool landscape = false,
+  }) {
+    _onItemTapped(value, landscape: landscape);
+    var func = (landscape ? landscapeFuncMap : funcMap)[value];
     switch (func) {
+      case ConFunc.toggleDashboard:
+        widget.functionMap[FunctionName.toggleDashboard]?.call();
+        break;
       case ConFunc.navi2About:
         showPopoverPage(context, const AboutPage());
         break;
