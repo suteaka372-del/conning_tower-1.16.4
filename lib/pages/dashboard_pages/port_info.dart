@@ -12,7 +12,10 @@ import 'package:conning_tower/widgets/cupertino_grouped_section.dart';
 import 'package:conning_tower/widgets/kancolle_item_improve_viewer.dart';
 import 'package:conning_tower/widgets/kancolle_ship_viewer.dart';
 import 'package:conning_tower/widgets/kancolle_use_item_viewer.dart';
-import 'package:conning_tower/widgets/resource_chart.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/models/feature/kancolle/resource_history.dart';
+import 'package:conning_tower/utils/objectbox.dart';
+import 'package:conning_tower/widgets/resource_history_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -80,6 +83,8 @@ class _PortInfoState extends ConsumerState<PortInfo>
         data.seaForceBase.admiral.name == "" ? null : data.seaForceBase;
 
     final nowJstTime = tz.TZDateTime.now(tz.getLocation('Asia/Tokyo'));
+    final todayDiffs = _todayResourceDiffs(
+        data.seaForceBase.admiral.name, data.seaForceBase.resource);
 
     return Padding(
       padding: tabContentMargin,
@@ -243,36 +248,42 @@ class _PortInfoState extends ConsumerState<PortInfo>
                           color: const Color.fromRGBO(32, 89, 29, 1.0),
                           admiralName: data.seaForceBase.admiral.name,
                           value: data.seaForceBase.resource.fuel,
+                          todayDiff: todayDiffs['fuel'],
                         ),
                         ResourceInfoBox(
                           resource: 'ammo',
                           color: const Color.fromRGBO(126, 102, 54, 1.0),
                           admiralName: data.seaForceBase.admiral.name,
                           value: data.seaForceBase.resource.ammo,
+                          todayDiff: todayDiffs['ammo'],
                         ),
                         ResourceInfoBox(
                           resource: 'steel',
                           color: const Color.fromRGBO(181, 180, 180, 1.0),
                           admiralName: data.seaForceBase.admiral.name,
                           value: data.seaForceBase.resource.steel,
+                          todayDiff: todayDiffs['steel'],
                         ),
                         ResourceInfoBox(
                           resource: 'bauxite',
                           color: const Color.fromRGBO(219, 150, 102, 1.0),
                           admiralName: data.seaForceBase.admiral.name,
                           value: data.seaForceBase.resource.bauxite,
+                          todayDiff: todayDiffs['bauxite'],
                         ),
                         ResourceInfoBox(
                           resource: 'ic',
                           color: const Color.fromRGBO(255, 176, 7, 1.0),
                           admiralName: data.seaForceBase.admiral.name,
                           value: data.seaForceBase.resource.instantCreateShip,
+                          todayDiff: todayDiffs['ic'],
                         ),
                         ResourceInfoBox(
                           resource: 'ir',
                           color: const Color.fromRGBO(195, 212, 75, 1.0),
                           admiralName: data.seaForceBase.admiral.name,
                           value: data.seaForceBase.resource.instantRepairs,
+                          todayDiff: todayDiffs['ir'],
                         ),
                         ResourceInfoBox(
                           resource: 'dm',
@@ -280,6 +291,7 @@ class _PortInfoState extends ConsumerState<PortInfo>
                           admiralName: data.seaForceBase.admiral.name,
                           value:
                               data.seaForceBase.resource.developmentMaterials,
+                          todayDiff: todayDiffs['dm'],
                         ),
                         ResourceInfoBox(
                           resource: 'im',
@@ -287,6 +299,7 @@ class _PortInfoState extends ConsumerState<PortInfo>
                           admiralName: data.seaForceBase.admiral.name,
                           value:
                               data.seaForceBase.resource.improvementMaterials,
+                          todayDiff: todayDiffs['im'],
                         ),
                         InfoBox(
                           onTap: () => navigatorToCupertino(
@@ -330,6 +343,7 @@ class ResourceInfoBox extends StatelessWidget {
     required this.color,
     required this.admiralName,
     required this.value,
+    this.todayDiff,
   });
 
   final String resource;
@@ -337,8 +351,19 @@ class ResourceInfoBox extends StatelessWidget {
   final String admiralName;
   final int value;
 
+  /// 今日 (5:00 から) の増減。記録がなければ null
+  final int? todayDiff;
+
   @override
   Widget build(BuildContext context) {
+    final valueText = AutoSizeText(
+      "$value",
+      maxFontSize: 30,
+      minFontSize: 18,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    final diff = todayDiff;
     return InfoBox(
       onTap: () {
         final resourceList = objectbox.queryResource(admiralName, resource);
@@ -350,8 +375,9 @@ class ResourceInfoBox extends StatelessWidget {
         }
         navigatorToCupertino(
           context,
-          ResourceChart(
-            data: resourceList,
+          ResourceHistoryPage(
+            admiralName: admiralName,
+            showMaterials: !kMainResourceKeys.contains(resource),
           ),
         );
       },
@@ -369,14 +395,55 @@ class ResourceInfoBox extends StatelessWidget {
           const CupertinoListTileChevron(),
         ],
       ),
-      bottom: AutoSizeText(
-        "$value",
-        maxFontSize: 30,
-        minFontSize: 18,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      bottom: diff == null
+          ? valueText
+          : FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.bottomRight,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  valueText,
+                  Text(
+                    '${repairText('今日', 'Today')} ${formatResourceDiff(diff)}',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: resourceDiffColor(diff, context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
+  }
+}
+
+/// 司令部タブの資源の箱に出す「今日の増減」
+Map<String, int?> _todayResourceDiffs(
+    String admiral, SeaForceBaseResource resource) {
+  if (admiral.isEmpty) return const {};
+  try {
+    final days = groupResourceLogs(objectbox.queryRecentResources(admiral),
+        gameDaySinceMs: resourceGameDaySinceMs());
+    final now = DateTime.now();
+    final current = {
+      'fuel': resource.fuel,
+      'ammo': resource.ammo,
+      'steel': resource.steel,
+      'bauxite': resource.bauxite,
+      'ic': resource.instantCreateShip,
+      'ir': resource.instantRepairs,
+      'dm': resource.developmentMaterials,
+      'im': resource.improvementMaterials,
+    };
+    return {
+      for (final e in current.entries)
+        e.key: todayResourceDiff(days, e.key, e.value, now)
+    };
+  } catch (_) {
+    return const {};
   }
 }
 

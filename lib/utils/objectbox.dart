@@ -9,9 +9,19 @@ import 'package:flutter/cupertino.dart';
 import 'package:conning_tower/objectbox.g.dart';
 import 'dart:developer' as dev;
 
+import '../models/feature/kancolle/resource_history.dart';
 import '../models/feature/log/kancolle_battle_log.dart';
 import '../models/feature/log/kancolle_quest_log.dart';
 import '../models/feature/log/kancolle_ship_log.dart'; // created by `flutter pub run build_runner build`
+
+/// 5:00 区切りで資源を記録し始めた時刻 (まだなら null)
+int? resourceGameDaySinceMs() {
+  try {
+    return localStorage.getInt(kResourceGameDaySinceKey);
+  } catch (_) {
+    return null;
+  }
+}
 
 class ObjectBox {
   /// The Store of this app.
@@ -208,9 +218,10 @@ class ObjectBox {
     if (admiral == '') {
       return;
     }
+    _markResourceGameDaySince();
     // search if resource log exists for today update value as high if value above high, low if value below low
-    // 2024-08-01 00:00:00.000 ~ 2024-08-01 23:59:59.999 should be one day
-    final todayStart = DateTime(time.year, time.month, time.day);
+    // 1日は JST 5:00 ~ 翌 4:59:59.999 (ゲームの日付の切り替わり)
+    final todayStart = gameDayStart(time);
     final todayEnd = todayStart
         .add(const Duration(days: 1))
         .subtract(const Duration(milliseconds: 1));
@@ -222,9 +233,12 @@ class ObjectBox {
                 .and(KancolleResourceLogEntity_.admiral.equals(admiral))))
         .build();
     List<KancolleResourceLogEntity> logs = query.find();
+    query.close();
     KancolleResourceLogEntity? log;
     if (logs.isNotEmpty) {
-      log = logs.first;
+      // 0:00 区切りの古い記録と重なるときは一番新しいものを更新する
+      logs.sort((a, b) => a.time.compareTo(b.time));
+      log = logs.last;
       final high = max(log.high, value);
       final low = min(log.low, value);
       final close = value;
@@ -246,6 +260,30 @@ class ObjectBox {
           low: value);
     }
     resourceLog.put(log);
+  }
+
+  /// 5:00 区切りで記録し始めた時刻を覚えておく (初回だけ)
+  void _markResourceGameDaySince() {
+    try {
+      if (localStorage.getInt(kResourceGameDaySinceKey) == null) {
+        localStorage.setInt(
+            kResourceGameDaySinceKey, DateTime.now().millisecondsSinceEpoch);
+      }
+    } catch (_) {}
+  }
+
+  /// 直近 [days] 日分の資源の記録 (全種類)
+  List<KancolleResourceLogEntity> queryRecentResources(String admiral,
+      {int days = 10}) {
+    final now = DateTime.now();
+    final query = resourceLog
+        .query(KancolleResourceLogEntity_.time
+            .betweenDate(now.subtract(Duration(days: days)), now)
+            .and(KancolleResourceLogEntity_.admiral.equals(admiral)))
+        .build();
+    final logs = query.find();
+    query.close();
+    return logs;
   }
 
   List<KancolleResourceLogEntity> queryResource(String admiral, String resource,
