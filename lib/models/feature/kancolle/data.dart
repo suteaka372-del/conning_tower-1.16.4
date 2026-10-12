@@ -726,6 +726,18 @@ class KancolleData {
                   progressFlag: _intOf(item['api_progress_flag']) ?? 0,
                 )
           ]);
+          // 「全て」タブ = いま受けられる任務の全部 (任務ツリーの推定に使う)
+          if (_intOf(params?['api_tab_id']) == 0) {
+            final ids = [
+              for (final item in list)
+                if (item is Map && _intOf(item['api_no']) != null) _intOf(item['api_no'])!
+            ];
+            tracker.allTab.onPage(
+              count: _intOf(apiData['api_count']) ?? ids.length,
+              ids: ids,
+              now: DateTime.now(),
+            );
+          }
         case '/api_req_quest/clearitemget':
           final id = _intOf(params?['api_quest_id']);
           if (id == null) return;

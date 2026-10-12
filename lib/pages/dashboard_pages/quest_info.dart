@@ -1,8 +1,11 @@
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_assistant.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_progress.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
+import 'package:conning_tower/utils/local_navigator.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
+import 'package:conning_tower/widgets/kancolle_quest_tree_view.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,31 +23,36 @@ class QuestInfoPage extends ConsumerStatefulWidget {
 class _QuestInfoPageState extends ConsumerState<QuestInfoPage>
     with AutomaticKeepAliveClientMixin {
   int _selectedSegment = 0;
+  final PageController controller = PageController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final PageController controller =
-        PageController(initialPage: _selectedSegment);
-    final data = ref.watch(kancolleDataProvider);
-    final questAssistant = data.questAssistant;
-    // final List<Quest> questList = switch (_selectedSegment) {
-    //   0 => questAssistant?.inProgress ?? [],
-    //   1 => questAssistant?.todo ?? [],
-    //   2 => questAssistant?.done ?? [],
-    //   _ => [],
-    // };
-    final questLists = [
-      questAssistant?.inProgress ?? [],
-      questAssistant?.todo ?? [],
-      questAssistant?.done ?? []
-    ];
+    // データが変わったら作り直す (中身は下の builder で最新のデータを読む)
+    ref.watch(kancolleDataProvider);
 
     return Padding(
       padding: tabContentMargin,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10.0),
-        child: CupertinoPageScaffold(
+        // 未出現の任務の詳細をこのタブの中で開く。
+        // LocalNavigatorBuilder の builder は最初に渡したものが使われ続けるので、
+        // build の変数を使わず、ここで毎回最新のデータを読む
+        child: LocalNavigatorBuilder(builder: (context) {
+          final data = ref.read(kancolleDataProvider);
+          final questAssistant = data.questAssistant;
+          final questLists = [
+            questAssistant?.inProgress ?? [],
+            questAssistant?.todo ?? [],
+            questAssistant?.done ?? []
+          ];
+          return CupertinoPageScaffold(
           navigationBar: CupertinoNavigationBar(
             automaticallyImplyLeading: false,
             transitionBetweenRoutes: false,
@@ -66,7 +74,8 @@ class _QuestInfoPageState extends ConsumerState<QuestInfoPage>
               children: {
                 0: Text(S.current.KCDashboardQuestInProgress),
                 1: Text(S.current.KCDashboardQuestToDo),
-                2: Text(S.current.KCDashboardQuestDone)
+                2: Text(S.current.KCDashboardQuestDone),
+                3: Text(repairText('未出現', 'Locked')),
               },
             ),
           ),
@@ -79,7 +88,8 @@ class _QuestInfoPageState extends ConsumerState<QuestInfoPage>
                   _selectedSegment = value;
                 });
               },
-              children: List.generate(3, (index) {
+              children: List.generate(4, (index) {
+                if (index == 3) return const QuestTreeNotAppearedView();
                 final questList = questLists[index];
                 if (questList.isEmpty) {
                   return Container();
@@ -99,7 +109,8 @@ class _QuestInfoPageState extends ConsumerState<QuestInfoPage>
               }),
             ),
           ),
-        ),
+        );
+        }),
       ),
     );
   }

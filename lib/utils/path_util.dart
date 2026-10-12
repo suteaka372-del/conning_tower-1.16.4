@@ -12,6 +12,8 @@ class PathUtil {
 
   late String localAkashiSchedulePath;
   late String localKcWikiDataPath;
+  late String localKcQuestsPath;
+  late String localKcanotifyQuestsPath;
 
   late String localL10nSlotItemPath;
   late String localL10nUseItemInImprovePath;
@@ -35,6 +37,8 @@ class PathUtil {
     final providersDir = p.join(docsDir.path, "providers");
     localAkashiSchedulePath = p.join(providersDir, "akashi_schedule.json");
     localKcWikiDataPath = p.join(providersDir, "kcwiki_data.json");
+    localKcQuestsPath = p.join(providersDir, "quest_tree", "kcquests_scn.json");
+    localKcanotifyQuestsPath = p.join(providersDir, "quest_tree", "kcanotify_quests_jp.json");
 
     final tasksDir = p.join(providersDir, "task");
     customTaskDataJsonPath = p.join(tasksDir, "tasks.json");

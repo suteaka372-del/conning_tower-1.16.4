@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:math' as math;
 
 import 'quest_fleet_condition.dart';
+import 'quest_tree.dart';
 import 'repair_timer.dart';
 
 // Quest progress tracking (x/y).
@@ -1200,6 +1201,9 @@ class QuestProgressTracker {
   /// 演習中の艦隊番号 (api_req_practice/battle の api_deck_id)
   int? practiceFleet;
 
+  /// 任務画面「全て」タブの一覧 (任務ツリーの推定用)
+  QuestListSnapshot allTab = QuestListSnapshot();
+
   QuestProgressEntry? progressOf(int questId) => entries[questId];
 
   // ---- 任務一覧 ----
@@ -1234,6 +1238,7 @@ class QuestProgressTracker {
   }
 
   void onQuestCleared(int questId) {
+    allTab.onCleared(questId);
     entries.remove(questId);
     questStates.remove(questId);
   }
@@ -1408,6 +1413,7 @@ class QuestProgressTracker {
         'lastUpdate': lastUpdate?.toUtc().toIso8601String(),
         'states': {for (final e in questStates.entries) '${e.key}': e.value},
         'entries': {for (final e in entries.entries) '${e.key}': e.value.toJson()},
+        'allTab': allTab.toJson(),
       });
 
   static QuestProgressTracker decode(String? jsonString) {
@@ -1416,6 +1422,7 @@ class QuestProgressTracker {
     try {
       final json = jsonDecode(jsonString) as Map<String, dynamic>;
       tracker.lastUpdate = DateTime.tryParse(json['lastUpdate'] as String? ?? '');
+      tracker.allTab = QuestListSnapshot.fromJson(json['allTab']);
       final states = json['states'] as Map<String, dynamic>? ?? {};
       for (final e in states.entries) {
         final id = int.tryParse(e.key);

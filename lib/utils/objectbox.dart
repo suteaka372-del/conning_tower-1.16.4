@@ -147,6 +147,22 @@ class ObjectBox {
     return getFileSize(pathUtil.objectBoxDataDBPath, 2);
   }
 
+  /// 任務一覧で見たことがある任務と、最後に見たときの状態 (api_state)。
+  /// [admiral] が空でなければ、その提督 (または提督名のない古い記録) だけ
+  Map<int, int?> questLogStates(String admiral) {
+    final result = <int, int?>{};
+    for (final entity in questLog.getAll()) {
+      try {
+        final log = KancolleQuestLog.fromJson(jsonDecode(entity.logStr));
+        if (admiral.isNotEmpty && log.admiral != null && log.admiral != admiral) continue;
+        result[entity.questId] = log.state;
+      } catch (_) {
+        result[entity.questId] = null;
+      }
+    }
+    return result;
+  }
+
   void saveQuest(int id, String logStr) {
     Query<KancolleQuestLogEntity> query =
         questLog.query(KancolleQuestLogEntity_.questId.equals(id)).build();
