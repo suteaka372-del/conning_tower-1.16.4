@@ -23,9 +23,6 @@ import '../../providers/generatable/kancolle_event_ship_tags_provider.dart';
 import '../../providers/generatable/kancolle_localization_provider.dart';
 import '../../models/data/kcsapi/start2/get_data_entity.dart';
 import '../../models/feature/kancolle/squad.dart';
-import '../../models/feature/kancolle/quest_assistant.dart';
-import '../../models/feature/kancolle/quest_fleet_condition.dart';
-import '../../models/feature/kancolle/quest_progress.dart';
 import '../../widgets/kancolle_anti_air_cut_in_section.dart';
 import '../../widgets/kancolle_quest_condition_section.dart';
 import '../../widgets/kancolle_attack_rate_section.dart';
@@ -305,19 +302,7 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                           ],
                                         ),
                                         KancolleQuestConditionSection(
-                                          items: questConditionItems(
-                                            fleet: QuestFleet.fromShips(
-                                                index + 1, squad.ships, shipInfo),
-                                            tracker: data.questProgress,
-                                            activeQuests: [
-                                              for (final quest in data
-                                                      .questAssistant?.ready ??
-                                                  const <Quest>[])
-                                                if (quest.state == 2)
-                                                  (id: quest.id, title: quest.title),
-                                            ],
-                                          ),
-                                        ),
+                                            fleetNumber: index + 1),
                                         CupertinoListSection.insetGrouped(
                                           margin: tabBottomListMargin,
                                           footer:

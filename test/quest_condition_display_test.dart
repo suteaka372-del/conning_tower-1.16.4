@@ -114,7 +114,7 @@ void main() {
       now: DateTime(2026, 10, 11),
     );
     await tester.pumpWidget(CupertinoApp(
-      home: CupertinoPageScaffold(child: ListView(children: [KancolleQuestConditionSection(items: items)])),
+      home: CupertinoPageScaffold(child: ListView(children: [QuestConditionListSection(items: items)])),
     ));
     expect(find.text('受注中の任務の編成条件'), findsOneWidget);
     expect(find.byIcon(CupertinoIcons.xmark_circle_fill), findsOneWidget); // 249

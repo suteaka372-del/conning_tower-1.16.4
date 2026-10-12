@@ -1,19 +1,45 @@
+import 'package:conning_tower/models/feature/kancolle/quest_fleet_condition.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_progress.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// 艦隊タブの「受注中の任務の編成条件」。表示中の艦隊で条件を満たすかを ✓/✗ で出す
-class KancolleQuestConditionSection extends StatefulWidget {
-  const KancolleQuestConditionSection({super.key, required this.items});
+/// 艦隊タブの「受注中の任務の編成条件」。第 [fleetNumber] 艦隊で条件を満たすかを ✓/✗ で出す。
+/// 艦隊タブの中身は最初の build の変数を使い続けるので、ここで最新のデータを読む
+class KancolleQuestConditionSection extends ConsumerWidget {
+  const KancolleQuestConditionSection({super.key, required this.fleetNumber});
+
+  final int fleetNumber;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final data = ref.watch(kancolleDataProvider);
+    if (fleetNumber < 1 || fleetNumber > data.squads.length) return const SizedBox.shrink();
+    final items = questConditionItems(
+      fleet: QuestFleet.fromShips(fleetNumber, data.squads[fleetNumber - 1].ships, data.dataInfo.shipInfo),
+      tracker: data.questProgress,
+      activeQuests: [
+        for (final quest in data.questAssistant?.ready ?? const [])
+          if (quest.state == 2) (id: quest.id, title: quest.title),
+      ],
+    );
+    return QuestConditionListSection(items: items);
+  }
+}
+
+/// 判定結果の一覧 (×の任務は条件を開いておく。タップで開閉)
+class QuestConditionListSection extends StatefulWidget {
+  const QuestConditionListSection({super.key, required this.items});
 
   final List<QuestConditionItem> items;
 
   @override
-  State<KancolleQuestConditionSection> createState() => _KancolleQuestConditionSectionState();
+  State<QuestConditionListSection> createState() => _QuestConditionListSectionState();
 }
 
-class _KancolleQuestConditionSectionState extends State<KancolleQuestConditionSection> {
+class _QuestConditionListSectionState extends State<QuestConditionListSection> {
   /// 開閉を切り替えた任務 (×の任務は最初から開いている)
   final Set<int> _toggled = {};
 

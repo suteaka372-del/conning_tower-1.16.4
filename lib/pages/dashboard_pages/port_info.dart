@@ -83,8 +83,6 @@ class _PortInfoState extends ConsumerState<PortInfo>
         data.seaForceBase.admiral.name == "" ? null : data.seaForceBase;
 
     final nowJstTime = tz.TZDateTime.now(tz.getLocation('Asia/Tokyo'));
-    final todayDiffs = _todayResourceDiffs(
-        data.seaForceBase.admiral.name, data.seaForceBase.resource);
 
     return Padding(
       padding: tabContentMargin,
@@ -92,6 +90,10 @@ class _PortInfoState extends ConsumerState<PortInfo>
         borderRadius: BorderRadius.circular(10.0),
         child: LocalNavigatorBuilder(
           builder: (context) {
+            // builder は最初に渡したものが使われ続けるので、今日の増減はここで毎回計算する
+            final current = ref.read(kancolleDataProvider);
+            final todayDiffs = _todayResourceDiffs(
+                current.seaForceBase.admiral.name, current.seaForceBase.resource);
             return CupertinoPageScaffold(
               resizeToAvoidBottomInset: false,
               child: SafeArea(
