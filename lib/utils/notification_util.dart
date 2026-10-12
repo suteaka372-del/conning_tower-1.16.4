@@ -5,6 +5,7 @@ import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/models/data/kcsapi/start2/get_data_entity.dart';
 import 'package:conning_tower/models/feature/kancolle/operation_queue.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/models/feature/kancolle/squad.dart';
 import 'package:conning_tower/models/feature/task.dart';
 import 'package:conning_tower/utils/toast.dart';
@@ -208,6 +209,7 @@ class NotificationUtil {
   /// Reschedule anchorage repair (20 min) / Nosaki (15 min) notifications, called on every port
   Future<void> setRepairTimerNotification({
     required List<Squad> squads,
+    List<Ship> ships = const [],
     required RepairTimerState repairTimer,
     required Map<int, GetDataApiDataApiMstShipEntity>? shipInfo,
   }) async {
@@ -224,20 +226,28 @@ class NotificationUtil {
       );
 
       final anchorageTimer = repairTimer.anchorageRepairTimer;
-      if (anchorageTimer != null && squads.any(repairTimer.canAnchorageRepair)) {
+      // 工作艦の艦隊を編成記録で外している間も、戻せば修理できるなら通知する
+      final away = !squads.any(repairTimer.canAnchorageRepair) && repairTimer.canAnchorageRepairAway(squads, ships);
+      if (anchorageTimer != null && (squads.any(repairTimer.canAnchorageRepair) || away)) {
         final time = tz.TZDateTime.from(anchorageTimer.add(kAnchorageRepairSpan), tz.local);
         if (time.isAfter(tz.TZDateTime.now(tz.local))) {
           await zonedScheduleAlarmClockNotification(
               _kAnchorageRepairNotificationId,
               repairText("泊地修理: 20分経過しました", "Anchorage repair: 20 minutes passed"),
-              repairText("母港に戻ると回復します", "Return to port to apply the repair"),
+              away
+                  ? repairText("編成記録で工作艦の艦隊に戻して母港に戻ると回復します",
+                      "Load the repair fleet preset and return to port to apply the repair")
+                  : repairText("母港に戻ると回復します", "Return to port to apply the repair"),
               time,
               notificationDetails);
         }
       }
 
       final conditionTimer = repairTimer.conditionRepairTimer;
-      if (conditionTimer != null && squads.any((squad) => repairTimer.canConditionRepair(squad, shipInfo))) {
+      // 野埼の艦隊を外している間も通知する (戻したときの条件は分からないので、野埼の艦隊を使っていたかで判断)
+      if (conditionTimer != null &&
+          (squads.any((squad) => repairTimer.canConditionRepair(squad, shipInfo)) ||
+              repairTimer.showConditionAway(squads))) {
         final time = tz.TZDateTime.from(conditionTimer.add(kConditionRepairSpan), tz.local);
         if (time.isAfter(tz.TZDateTime.now(tz.local))) {
           await zonedScheduleAlarmClockNotification(

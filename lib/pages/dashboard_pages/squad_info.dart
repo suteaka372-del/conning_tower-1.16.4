@@ -200,11 +200,7 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                               return ScrollViewWithCupertinoScrollbar(
                                 children: _displayedSegment == 0
                                     ? [
-                                        KancolleRepairTimerSection(
-                                          squad: squad,
-                                          repairTimer: data.repairTimer,
-                                          shipInfo: shipInfo,
-                                        ),
+                                        KancolleRepairTimerSection(squadIndex: index),
                                         CupertinoListSection.insetGrouped(
                                           margin: tabBottomListMargin,
                                           children: [

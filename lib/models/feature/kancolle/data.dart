@@ -82,7 +82,7 @@ class KancolleData {
     this.mapStateMap,
     RepairTimerState? repairTimer,
     QuestProgressTracker? questProgress,
-  })  : repairTimer = repairTimer ?? RepairTimerState(),
+  })  : repairTimer = repairTimer ?? _loadRepairTimer(),
         questProgress = questProgress ?? _loadQuestProgress();
 
   KancolleData copyWith({
@@ -229,6 +229,7 @@ class KancolleData {
         }
       }
       repairTimer.onHenseiChange(squads[squadIdx], requestBody.apiShipId!);
+      saveRepairTimer();
     }
 
     if (model == null) {
@@ -262,6 +263,9 @@ class KancolleData {
       }
 
       squads[index].ships = ships;
+      // 編成記録の展開ではタイマーはリセットされない。工作艦・野埼の艦隊だけ覚える
+      repairTimer.rememberFleets(squads);
+      saveRepairTimer();
     }
 
     if (model is ReqHokyuChargeEntity) {
@@ -452,8 +456,10 @@ class KancolleData {
       };
       if (!isLocalCache) {
         repairTimer.onPort(squads, dataInfo.shipInfo);
+        saveRepairTimer();
         notification.setRepairTimerNotification(
           squads: squads,
+          ships: fleet.ships,
           repairTimer: repairTimer,
           shipInfo: dataInfo.shipInfo,
         );
@@ -678,6 +684,26 @@ class KancolleData {
     if (shipsDamaged.isNotEmpty) {
       ref.watch(alertStateProvider.notifier).update(
           (state) => Alert(S.current.TextLDamage, shipsDamaged.join("\n")));
+    }
+  }
+
+  static const String _kRepairTimerKey = "KC_REPAIR_TIMER";
+
+  static RepairTimerState _loadRepairTimer() {
+    try {
+      final saved = localStorage.getString(_kRepairTimerKey);
+      return saved == null ? RepairTimerState() : RepairTimerState.fromJson(jsonDecode(saved));
+    } catch (e) {
+      return RepairTimerState();
+    }
+  }
+
+  /// 泊地修理・野埼のタイマーを保存する (アプリを再起動しても続ける)
+  void saveRepairTimer() {
+    try {
+      localStorage.setString(_kRepairTimerKey, jsonEncode(repairTimer.toJson()));
+    } catch (e) {
+      log("save repair timer failed: $e");
     }
   }
 

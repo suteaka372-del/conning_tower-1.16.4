@@ -233,6 +233,7 @@ class RepairTimerState {
     } else if (_detectAnchorageHealing(squads)) {
       anchorageRepairTimer = now;
     }
+    rememberFleets(squads);
   }
 
   bool _detectAnchorageHealing(List<Squad> squads) {
@@ -266,5 +267,88 @@ class RepairTimerState {
     if (hasNosaki(squad)) {
       conditionRepairTimer = DateTime.now();
     }
+    rememberFleets([squad]);
+  }
+
+  // ---- 編成記録で工作艦・野埼の艦隊を外している間 ----
+  // タイマーは艦隊ごとではなく1本だけで、編成記録の展開 (preset_select) ではリセットされない。
+  // 外している間も第1艦隊のタブに表示を続けるため、最後の工作艦の艦隊を覚えておく
+
+  /// 最後に見た「旗艦が工作艦の艦隊」の艦 (uid、並び順のまま)
+  List<int> anchorageFleetShipIds = [];
+
+  /// 野埼の艦隊を使ったことがある (外している間も表示する)
+  bool conditionFleetSeen = false;
+
+  /// 外している間の表示を ✕ で消した (工作艦・野埼の艦隊が戻ったら元に戻す)
+  bool anchorageAwayDismissed = false;
+  bool conditionAwayDismissed = false;
+
+  /// 編成が変わったら呼ぶ (母港・編成変更・編成記録の展開)
+  void rememberFleets(List<Squad> squads) {
+    for (final squad in squads) {
+      if (hasRepairShipFlagship(squad)) {
+        anchorageFleetShipIds = [for (final ship in squad.ships) ship.uid];
+        anchorageAwayDismissed = false;
+        break;
+      }
+    }
+    if (squads.any(hasNosaki)) {
+      conditionFleetSeen = true;
+      conditionAwayDismissed = false;
+    }
+  }
+
+  /// 工作艦の艦隊を外していて、タイマーを表示し続けるか
+  bool showAnchorageAway(List<Squad> squads) =>
+      anchorageRepairTimer != null &&
+      anchorageFleetShipIds.isNotEmpty &&
+      !anchorageAwayDismissed &&
+      !squads.any(hasRepairShipFlagship);
+
+  /// 野埼の艦隊を外していて、タイマーを表示し続けるか
+  bool showConditionAway(List<Squad> squads) =>
+      conditionRepairTimer != null && conditionFleetSeen && !conditionAwayDismissed && !squads.any(hasNosaki);
+
+  /// 覚えている工作艦の艦隊 (いまの艦の状態で組み立てる。いなくなった艦は除く)
+  Squad? rememberedAnchorageSquad(List<Ship> allShips) {
+    if (anchorageFleetShipIds.isEmpty) return null;
+    final byUid = {for (final ship in allShips) ship.uid: ship};
+    final ships = [
+      for (final uid in anchorageFleetShipIds)
+        if (byUid[uid] case final ship?) ship
+    ];
+    if (ships.isEmpty || !_isRepairShip(ships.first)) return null;
+    return Squad(id: 0, name: '', ships: ships);
+  }
+
+  /// 外している工作艦の艦隊を戻せば修理できる艦がいるか (通知用)
+  bool canAnchorageRepairAway(List<Squad> squads, List<Ship> allShips) {
+    if (!showAnchorageAway(squads)) return false;
+    final squad = rememberedAnchorageSquad(allShips);
+    return squad != null && canAnchorageRepair(squad);
+  }
+
+  Map<String, dynamic> toJson() => {
+        'anchorage': anchorageRepairTimer?.toUtc().toIso8601String(),
+        'condition': conditionRepairTimer?.toUtc().toIso8601String(),
+        'anchorageFleet': anchorageFleetShipIds,
+        'conditionFleetSeen': conditionFleetSeen,
+        'anchorageAwayDismissed': anchorageAwayDismissed,
+        'conditionAwayDismissed': conditionAwayDismissed,
+      };
+
+  static RepairTimerState fromJson(dynamic json) {
+    final state = RepairTimerState();
+    if (json is! Map) return state;
+    DateTime? time(dynamic value) => value is String ? DateTime.tryParse(value)?.toLocal() : null;
+    state.anchorageRepairTimer = time(json['anchorage']);
+    state.conditionRepairTimer = time(json['condition']);
+    final fleet = json['anchorageFleet'];
+    if (fleet is List) state.anchorageFleetShipIds = fleet.whereType<int>().toList();
+    state.conditionFleetSeen = json['conditionFleetSeen'] == true;
+    state.anchorageAwayDismissed = json['anchorageAwayDismissed'] == true;
+    state.conditionAwayDismissed = json['conditionAwayDismissed'] == true;
+    return state;
   }
 }
