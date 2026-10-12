@@ -76,6 +76,12 @@ class QuestTreeEntry {
   /// 出現時期や注意 (kcanotify の memo)
   final String memo;
 
+  /// 資源以外の報酬 (kcanotify の rewards。選択報酬を含む)
+  final String rewards;
+
+  /// 報酬の資源 (燃料・弾薬・鋼材・ボーキサイト。kcanotify の resources[0])
+  final List<int>? rewardResources;
+
   /// 前提任務 (任務ID)
   final List<int> prerequisites;
 
@@ -94,6 +100,8 @@ class QuestTreeEntry {
     required this.name,
     this.detail = '',
     this.memo = '',
+    this.rewards = '',
+    this.rewardResources,
     this.prerequisites = const [],
     this.unknownPrerequisites = const [],
     this.hasPrerequisiteData = true,
@@ -175,6 +183,8 @@ class QuestTreeData {
         name: text(jpMap?['name']).isNotEmpty ? text(jpMap?['name']) : text(wikiMap?['name']),
         detail: text(jpMap?['desc']).isNotEmpty ? text(jpMap?['desc']) : text(wikiMap?['desc']),
         memo: text(jpMap?['memo']),
+        rewards: text(jpMap?['rewards']),
+        rewardResources: _resources(jpMap?['resources']),
         prerequisites: [
           for (final c in preCodes)
             if (codeToId[c] != null && codeToId[c] != id) codeToId[c]!
@@ -189,6 +199,14 @@ class QuestTreeData {
       );
     }
     return QuestTreeData(quests, updatedAt: updatedAt);
+  }
+
+  /// [[燃料, 弾薬, 鋼材, ボーキ], [...]] の最初の4つ
+  static List<int>? _resources(dynamic value) {
+    if (value is! List || value.isEmpty || value.first is! List) return null;
+    final first = value.first as List;
+    if (first.length < 4) return null;
+    return [for (final v in first.take(4)) v is num ? v.toInt() : 0];
   }
 
   /// 前提任務をさかのぼったすべての任務 (自分は含まない)
@@ -412,4 +430,40 @@ class QuestListSnapshot {
     snapshot.completedAt = DateTime.tryParse('${json['completedAt'] ?? ''}');
     return snapshot;
   }
+}
+
+/// 資源以外の報酬を、必ずもらえるものと選択報酬に分けたもの
+class QuestRewardText {
+  /// 必ずもらえるもの
+  final List<String> fixed;
+
+  /// 選択報酬 (1グループから1つ選ぶ。二回選択報酬はグループが2つ)
+  final List<List<String>> choices;
+
+  const QuestRewardText({this.fixed = const [], this.choices = const []});
+
+  bool get isEmpty => fixed.isEmpty && choices.isEmpty;
+}
+
+final RegExp _choicePattern = RegExp(r'(?:[^\s,、]*選択報酬)[：:]\s*((?:\[[^\]]*\]\s*)+)');
+final RegExp _choiceGroupPattern = RegExp(r'\[([^\]]*)\]');
+
+/// kcanotify の rewards ("三式弾改, 選択報酬：[41cm連装砲×2、開発資材×8]" など) を分ける
+QuestRewardText parseQuestRewards(String rewards) {
+  final choices = <List<String>>[];
+  final rest = rewards.replaceAllMapped(_choicePattern, (match) {
+    for (final group in _choiceGroupPattern.allMatches(match.group(1)!)) {
+      final items = [
+        for (final item in group.group(1)!.split('、'))
+          if (item.trim().isNotEmpty) item.trim()
+      ];
+      if (items.isNotEmpty) choices.add(items);
+    }
+    return ',';
+  });
+  final fixed = [
+    for (final item in rest.split(RegExp(r'[,，]')))
+      if (item.trim().isNotEmpty) item.trim()
+  ];
+  return QuestRewardText(fixed: fixed, choices: choices);
 }

@@ -3,7 +3,7 @@ import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_tree.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/providers/quest_tree_provider.dart';
-import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
+import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -377,64 +377,6 @@ class QuestTreeDetailPage extends ConsumerWidget {
     final remaining = progress.remainingPrerequisites(data, questId);
     final successors = data.successors[questId] ?? const <int>[];
 
-    Widget questLine(int id, {int depth = 0, bool repeated = false}) {
-      final q = data.quests[id];
-      final s = progress.statusOf(id);
-      final (m, c) = questTreeStatusMark(s, context, available: progress.isAvailable(id));
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: q == null ? null : () => navigatorToCupertino(context, QuestTreeDetailPage(questId: id)),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(14.0 + depth * 16, 5, 12, 5),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 18,
-                child: Text(m, style: TextStyle(color: c, fontWeight: FontWeight.w700, fontSize: 14)),
-              ),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(children: [
-                    TextSpan(text: '${q?.code ?? id} ', style: secondaryStyle),
-                    TextSpan(text: q?.name ?? repairText('不明な任務', 'Unknown quest')),
-                    if (repeated) TextSpan(text: repairText(' (上と同じ)', ' (see above)'), style: secondaryStyle),
-                    if (s == QuestTreeStatus.appeared && progress.isAvailable(id))
-                      TextSpan(
-                        text: repairText(' いま受けられる', ' available'),
-                        style: TextStyle(fontSize: 12, color: c),
-                      ),
-                  ]),
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    Widget section(String title, List<Widget> children, {String? footer}) => Container(
-          margin: tabBottomListMargin,
-          decoration: BoxDecoration(
-            color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
-                child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              ),
-              ...children,
-              if (footer != null)
-                Padding(padding: const EdgeInsets.fromLTRB(14, 4, 14, 10), child: Text(footer, style: secondaryStyle)),
-              const SizedBox(height: 6),
-            ],
-          ),
-        );
-
     final String treeNote;
     if (!quest.hasPrerequisiteData) {
       treeNote = repairText('この任務の前提任務のデータはまだありません。', 'No prerequisite data for this quest.');
@@ -466,7 +408,7 @@ class QuestTreeDetailPage extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.only(bottom: 24),
             children: [
-              section(quest.name, [
+              QuestDetailSection(title: quest.name, children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
                   child: Text.rich(
@@ -494,22 +436,28 @@ class QuestTreeDetailPage extends ConsumerWidget {
                     child: Text(quest.memo, style: secondaryStyle),
                   ),
               ]),
-              section(
-                repairText('解放までに必要な任務', 'Quests needed to unlock'),
-                [
-                  for (final node in tree) questLine(node.id, depth: node.depth, repeated: node.repeated),
+              QuestDetailSection(
+                title: repairText('解放までに必要な任務', 'Quests needed to unlock'),
+                footer: treeNote,
+                children: [
+                  for (final node in tree) QuestTreeLine(questId: node.id, depth: node.depth, repeated: node.repeated),
                   for (final code in quest.unknownPrerequisites)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(14, 5, 12, 5),
                       child: Text('? $code ${repairText('(データにない任務)', '(unknown quest)')}', style: secondaryStyle),
                     ),
                 ],
-                footer: treeNote,
               ),
               if (successors.isNotEmpty)
-                section(
-                  repairText('この任務をクリアすると出現する任務', 'Quests unlocked by this quest'),
-                  [for (final id in successors) questLine(id)],
+                QuestDetailSection(
+                  title: repairText('この任務をクリアすると出現する任務', 'Quests unlocked by this quest'),
+                  children: [for (final id in successors) QuestTreeLine(questId: id)],
+                ),
+              if (quest.rewards.isNotEmpty || quest.rewardResources != null)
+                QuestDetailSection(
+                  title: repairText('報酬', 'Rewards'),
+                  footer: repairText('kcanotify-gamedata のデータです。', 'From kcanotify-gamedata.'),
+                  children: [QuestRewardList(materials: quest.rewardResources, rewards: quest.rewards)],
                 ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
@@ -522,6 +470,60 @@ class QuestTreeDetailPage extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 前後の任務の1行 (状態の印・コード・名前)。タップでその任務の詳細を開く
+class QuestTreeLine extends ConsumerWidget {
+  const QuestTreeLine({super.key, required this.questId, this.depth = 0, this.repeated = false});
+
+  final int questId;
+  final int depth;
+
+  /// 上にすでに出ている任務
+  final bool repeated;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final data = ref.watch(questTreeProvider).valueOrNull;
+    final progress = ref.watch(questTreeProgressProvider);
+    if (data == null || progress == null) return const SizedBox.shrink();
+    final secondaryStyle = TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel.resolveFrom(context));
+    final q = data.quests[questId];
+    final s = progress.statusOf(questId);
+    final available = progress.isAvailable(questId);
+    final (m, c) = questTreeStatusMark(s, context, available: available);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: q == null ? null : () => openQuestDetail(context, ref, questId),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(14.0 + depth * 16, 5, 12, 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 18,
+              child: Text(m, style: TextStyle(color: c, fontWeight: FontWeight.w700, fontSize: 14)),
+            ),
+            Expanded(
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: '${q?.code ?? questId} ', style: secondaryStyle),
+                  TextSpan(text: q?.name ?? repairText('不明な任務', 'Unknown quest')),
+                  if (repeated) TextSpan(text: repairText(' (上と同じ)', ' (see above)'), style: secondaryStyle),
+                  if (s == QuestTreeStatus.appeared && available)
+                    TextSpan(
+                      text: repairText(' いま受けられる', ' available'),
+                      style: TextStyle(fontSize: 12, color: c),
+                    ),
+                ]),
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
         ),
       ),
     );

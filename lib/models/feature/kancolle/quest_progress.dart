@@ -1174,12 +1174,16 @@ class QuestListItem {
   final int label;
   final int progressFlag;
 
+  /// 報酬の資源 (api_get_material: 燃料・弾薬・鋼材・ボーキサイト)
+  final List<int>? materials;
+
   const QuestListItem({
     required this.id,
     required this.state,
     required this.type,
     this.label = 0,
     this.progressFlag = 0,
+    this.materials,
   });
 }
 
@@ -1204,6 +1208,9 @@ class QuestProgressTracker {
   /// 任務画面「全て」タブの一覧 (任務ツリーの推定用)
   QuestListSnapshot allTab = QuestListSnapshot();
 
+  /// 任務ID -> 報酬の資源 (任務一覧で見たもの。保存はしない)
+  final Map<int, List<int>> rewardMaterials = {};
+
   QuestProgressEntry? progressOf(int questId) => entries[questId];
 
   // ---- 任務一覧 ----
@@ -1215,6 +1222,8 @@ class QuestProgressTracker {
 
     for (final quest in quests) {
       questStates[quest.id] = quest.state;
+      final materials = quest.materials;
+      if (materials != null && materials.length >= 4) rewardMaterials[quest.id] = materials.sublist(0, 4);
       if (quest.state == 3) {
         // 達成済み: 報酬受け取り待ち。表示は満タンにする
         final entry = entries[quest.id];
@@ -1445,6 +1454,87 @@ class QuestProgressTracker {
       return QuestProgressTracker();
     }
     return tracker;
+  }
+}
+
+// ---- 任務の詳細 ----
+
+String _areaText(int area) => '${area ~/ 10}-${area % 10}';
+
+String _enemyTypeText(Set<int> types) {
+  if (types.length == 2 && types.containsAll(_carrier)) return repairText('空母', 'carriers');
+  return types
+      .map((t) => switch (t) {
+            15 => repairText('輸送艦', 'transports'),
+            13 => repairText('潜水艦', 'submarines'),
+            _ => repairText('艦種$t', 'type $t'),
+          })
+      .join('・');
+}
+
+String _winText(int rank) => rank >= 6
+    ? ' ${_rankLabel(rank)}${repairText('勝利', '')}'
+    : rank >= 2
+        ? ' ${_rankLabel(rank)}${repairText('勝利以上', '+')}'
+        : '';
+
+/// 条件1つ分の説明 ("2-2 ボス S勝利 1回" など)。[missionName] は遠征IDから遠征名を引く
+String questCounterConditionText(QuestCounter c, {String? Function(int missionId)? missionName}) {
+  final count = c.max;
+  final times = repairText('$count回', '×$count');
+  switch (c.kind) {
+    case QuestCounterKind.battle:
+      final areas = c.areas;
+      // あ号作戦の「S勝利」「ボス」などは、ラベルが条件そのもの
+      if (c.label.isNotEmpty && areas == null) return '${c.label} $times';
+      // 地名の入ったラベル (1-2、1-6終点など) はそのまま使う
+      final where = c.label.isNotEmpty
+          ? c.label
+          : areas == null
+              ? repairText('戦闘', 'Battle')
+              : (areas.toList()..sort()).map(_areaText).join('・');
+      final gauge = c.gauge == null ? '' : repairText(' (第${c.gauge}ゲージ)', ' (gauge ${c.gauge})');
+      final boss = c.bossOnly ? repairText(' ボス', ' boss') : '';
+      return '$where$gauge$boss${_winText(c.minRank)} $times';
+    case QuestCounterKind.slaughter:
+      final types = _enemyTypeText(c.targets ?? const <int>{});
+      return repairText('敵$typesを撃沈 $count隻', 'Sink $count $types');
+    case QuestCounterKind.sortie:
+      return '${c.label.isNotEmpty ? c.label : repairText('出撃', 'Sortie')} $times';
+    case QuestCounterKind.practice:
+      return '${repairText('演習', 'Exercise')}${_winText(c.minRank)} $times';
+    case QuestCounterKind.expedition:
+      final missions = c.areas;
+      final String name;
+      if (c.label.isNotEmpty) {
+        name = c.label;
+      } else if (missions == null) {
+        name = repairText('遠征', 'Expedition');
+      } else {
+        name = (missions.toList()..sort())
+            .map((id) => missionName?.call(id) ?? repairText('遠征$id', 'Expedition $id'))
+            .join('・');
+      }
+      return '$name ${repairText('成功', 'success')} $times';
+    case QuestCounterKind.docking:
+      return '${repairText('入渠', 'Docking')} $times';
+    case QuestCounterKind.supply:
+      return '${repairText('補給', 'Resupply')} $times';
+    case QuestCounterKind.development:
+      return '${repairText('装備開発', 'Development')} $times';
+    case QuestCounterKind.construction:
+      return '${repairText('建造', 'Construction')} $times';
+    case QuestCounterKind.destruction:
+      return '${repairText('解体', 'Scrap ship')} $times';
+    case QuestCounterKind.improvement:
+      return '${repairText('装備改修', 'Improvement')} $times';
+    case QuestCounterKind.modernization:
+      return '${repairText('近代化改修', 'Modernization')} $times';
+    case QuestCounterKind.discard:
+      final what = c.label.isNotEmpty ? c.label : repairText('装備', 'equipment');
+      return c.countsAmount
+          ? repairText('$whatを廃棄 $count個', 'Scrap $count $what')
+          : repairText('$whatを廃棄 $times', 'Scrap $what $times');
   }
 }
 

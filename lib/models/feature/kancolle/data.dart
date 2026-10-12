@@ -724,6 +724,9 @@ class KancolleData {
                   type: _intOf(item['api_type']) ?? 0,
                   label: _intOf(item['api_label_type']) ?? 0,
                   progressFlag: _intOf(item['api_progress_flag']) ?? 0,
+                  materials: item['api_get_material'] is List
+                      ? [for (final v in item['api_get_material'] as List) _intOf(v) ?? 0]
+                      : null,
                 )
           ]);
           // 「全て」タブ = いま受けられる任務の全部 (任務ツリーの推定に使う)

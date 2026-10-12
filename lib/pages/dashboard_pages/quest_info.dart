@@ -1,10 +1,12 @@
 import 'package:conning_tower/generated/l10n.dart';
+import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_assistant.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_progress.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/local_navigator.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
+import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:conning_tower/widgets/kancolle_quest_tree_view.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
@@ -118,7 +120,7 @@ class _QuestInfoPageState extends ConsumerState<QuestInfoPage>
   @override
   bool get wantKeepAlive => true;
 
-  /// 任務1件分。進捗 (x/y) とバーを表示する
+  /// 任務1件分。進捗 (x/y) とバーを表示する。タップで詳細を開く
   Widget buildQuestTile(BuildContext context, Quest quest, QuestProgressTracker tracker) {
     final entry = tracker.progressOf(quest.id);
     final isCompleted = quest.state == 3;
@@ -147,6 +149,8 @@ class _QuestInfoPageState extends ConsumerState<QuestInfoPage>
 
     return CupertinoListTile(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      onTap: () => navigatorToCupertino(context, QuestDetailPage(questId: quest.id)),
+      trailing: const CupertinoListTileChevron(),
       title: Text(quest.title ?? ''),
       additionalInfo: progressText.isEmpty
           ? null
