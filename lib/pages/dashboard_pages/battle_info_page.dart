@@ -16,6 +16,7 @@ import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/providers/raw_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/input_pages.dart';
+import 'package:conning_tower/widgets/kancolle_air_battle_section.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -294,6 +295,9 @@ class _BattleInfoPageState extends ConsumerState<BattleInfoPage>
                                         )),
                               ));
                             }
+
+                            // 航空戦 (機数・撃墜数・対空カットイン) は末尾に
+                            items.add(const KancolleAirBattleSection());
 
                             debugPrint(constraints.maxWidth.toString());
                             if (constraints.maxWidth >= 600) {

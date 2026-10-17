@@ -27,6 +27,7 @@ import 'map_info.dart';
 import 'map_state.dart';
 import 'operation_queue.dart';
 import 'quest_assistant.dart';
+import 'air_battle_record.dart';
 import 'raw_data.dart';
 import 'quest_eo_tracker.dart';
 import 'quest_fleet_condition.dart';
@@ -69,6 +70,9 @@ class KancolleData {
   final RepairTimerState repairTimer;
   final QuestProgressTracker questProgress;
 
+  /// 戦闘情報タブの「航空戦」(今のマス・演習の航空戦)
+  final AirBattleRecord airBattle;
+
   KancolleData({
     required this.queue,
     required this.squads,
@@ -83,7 +87,9 @@ class KancolleData {
     this.mapStateMap,
     RepairTimerState? repairTimer,
     QuestProgressTracker? questProgress,
-  })  : repairTimer = repairTimer ?? _loadRepairTimer(),
+    AirBattleRecord? airBattle,
+  })  : airBattle = airBattle ?? AirBattleRecord(),
+        repairTimer = repairTimer ?? _loadRepairTimer(),
         questProgress = questProgress ?? _loadQuestProgress() {
     // 任務の条件の表示 (艦名・装備名) に使う
     questMasterData = dataInfo;
@@ -112,6 +118,7 @@ class KancolleData {
       mapStateMap: mapStateMap,
       repairTimer: repairTimer,
       questProgress: questProgress,
+      airBattle: airBattle,
     );
   }
 
@@ -295,6 +302,7 @@ class KancolleData {
     }
 
     parseBattle(model);
+    recordAirBattle(path, json);
 
     if (model is GetMemberQuestListEntity) {
       if (questAssistant == null) {
@@ -557,6 +565,33 @@ class KancolleData {
       mapStateMap[mapState.id] = mapState;
     }
     return mapStateMap;
+  }
+
+  /// 戦闘の応答から航空戦 (機数・撃墜数・対空カットイン) を記録する。マスが変わったら消す
+  void recordAirBattle(String path, dynamic json) {
+    try {
+      if (path.startsWith('/api_req_map/') || path == '/api_req_practice/battle') airBattle.clear();
+      final isBattle = path.startsWith('/api_req_sortie/') ||
+          path.startsWith('/api_req_battle_midnight/') ||
+          path.startsWith('/api_req_combined_battle/') ||
+          path.startsWith('/api_req_practice/');
+      if (!isBattle || path.contains('result') || path.contains('goback_port')) return;
+      final apiData = json is Map ? json['api_data'] : null;
+      if (apiData is! Map) return;
+      airBattle.addBattle(path, apiData, shipAt: (index, {required friendly}) {
+        try {
+          final ship = friendly
+              ? battleInfo.friendSquads?.firstOrNull?.ships.elementAtOrNull(index)
+              : battleInfo.getShip(FleetSide.our, index);
+          if (ship == null) return null;
+          return (ship.uid, ship.name ?? dataInfo.shipInfo?[ship.shipId]?.apiName ?? '');
+        } catch (_) {
+          return null;
+        }
+      });
+    } catch (e) {
+      log("air battle record failed at $path: $e");
+    }
   }
 
   void parseBattle(model) {
