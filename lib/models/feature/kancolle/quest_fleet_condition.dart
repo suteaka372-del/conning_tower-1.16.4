@@ -39,6 +39,12 @@ class QuestShip {
   final String name;
   final List<QuestEquipment> equipment;
 
+  /// 図鑑の並び順 (api_sort_id。ElectronicObserver EN の国籍判定に使う)
+  final int sortId;
+
+  /// 自分から改装前をたどった艦ID (最後が未改装の艦)。空なら自分だけ
+  final List<int> remodelChain;
+
   const QuestShip({
     required this.shipId,
     required this.shipType,
@@ -48,7 +54,15 @@ class QuestShip {
     this.level = 1,
     this.name = '',
     this.equipment = const [],
+    this.sortId = 0,
+    this.remodelChain = const [],
   });
+
+  /// 未改装の艦ID
+  int get baseShipId => remodelChain.isEmpty ? shipId : remodelChain.last;
+
+  /// [id] の艦か、その改装後か
+  bool isRemodelOf(int id) => shipId == id || remodelChain.contains(id);
 
   /// 国籍 (1=米, 2=英, 3=伊, 4=独, 5=仏, 6=露, 7=豪, 8=蘭, 9=瑞, 10=中, 11=亜, 12=諾, 13=泰, 0=日本など)
   int get nationality {
@@ -113,6 +127,8 @@ class QuestFleet {
             shipClass: shipInfo?[ship.shipId]?.apiCtype ?? 0,
             yomi: shipInfo?[ship.shipId]?.apiYomi ?? '',
             remodelTier: remodelTierOf(ship.shipId, shipInfo),
+            remodelChain: questRemodelChain(ship.shipId),
+            sortId: shipInfo?[ship.shipId]?.apiSortId ?? 0,
             level: ship.level,
             name: ship.name ?? '',
             equipment: [
@@ -127,9 +143,9 @@ class QuestFleet {
 Map<int, GetDataApiDataApiMstShipEntity>? _remodelSource;
 Map<int, int> _remodelBefore = {};
 
-/// 改装段階 (ShipDataMaster.RemodelTier)。改装前の艦をたどった回数
-int remodelTierOf(int shipId, Map<int, GetDataApiDataApiMstShipEntity>? shipInfo) {
-  if (shipInfo == null) return 0;
+/// 改装前の艦の表を [shipInfo] から作る (同じ表なら作り直さない)
+void questUseShipMaster(Map<int, GetDataApiDataApiMstShipEntity>? shipInfo) {
+  if (shipInfo == null) return;
   if (!identical(_remodelSource, shipInfo)) {
     final before = <int, int>{};
     for (final ship in shipInfo.values) {
@@ -141,6 +157,32 @@ int remodelTierOf(int shipId, Map<int, GetDataApiDataApiMstShipEntity>? shipInfo
     _remodelBefore = before;
     _remodelSource = shipInfo;
   }
+}
+
+/// [shipId] から改装前をたどった艦ID (自分は含まない。最後が未改装の艦)
+List<int> questRemodelChain(int shipId) {
+  final chain = <int>[];
+  var current = shipId;
+  final visited = {shipId};
+  while (true) {
+    final previous = _remodelBefore[current];
+    if (previous == null || !visited.add(previous)) break;
+    chain.add(previous);
+    current = previous;
+  }
+  return chain;
+}
+
+/// 未改装の艦ID
+int questBaseShipId(int shipId) {
+  final chain = questRemodelChain(shipId);
+  return chain.isEmpty ? shipId : chain.last;
+}
+
+/// 改装段階 (ShipDataMaster.RemodelTier)。改装前の艦をたどった回数
+int remodelTierOf(int shipId, Map<int, GetDataApiDataApiMstShipEntity>? shipInfo) {
+  if (shipInfo == null) return 0;
+  questUseShipMaster(shipInfo);
   var tier = 0;
   var current = shipId;
   final visited = {shipId};
@@ -155,10 +197,20 @@ int remodelTierOf(int shipId, Map<int, GetDataApiDataApiMstShipEntity>? shipInfo
 
 /// 編成条件の1項目
 class QuestFleetRequirement {
-  final String label;
+  final String _label;
+  final String Function()? _labelBuilder;
   final bool Function(QuestFleet fleet) _test;
 
-  const QuestFleetRequirement(this.label, this._test);
+  const QuestFleetRequirement(String label, this._test)
+      : _label = label,
+        _labelBuilder = null;
+
+  /// 表示するときに文を作る (艦名などのマスターデータは後から読み込まれるため)
+  const QuestFleetRequirement.lazy(String Function() label, this._test)
+      : _label = '',
+        _labelBuilder = label;
+
+  String get label => _labelBuilder?.call() ?? _label;
 
   bool isMet(QuestFleet fleet) => _test(fleet);
 }

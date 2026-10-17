@@ -14,6 +14,8 @@ class PathUtil {
   late String localKcWikiDataPath;
   late String localKcQuestsPath;
   late String localKcanotifyQuestsPath;
+  late String localEoQuestTrackersPath;
+  late String localEoQuestsMetadataPath;
 
   late String localL10nSlotItemPath;
   late String localL10nUseItemInImprovePath;
@@ -39,6 +41,8 @@ class PathUtil {
     localKcWikiDataPath = p.join(providersDir, "kcwiki_data.json");
     localKcQuestsPath = p.join(providersDir, "quest_tree", "kcquests_scn.json");
     localKcanotifyQuestsPath = p.join(providersDir, "quest_tree", "kcanotify_quests_jp.json");
+    localEoQuestTrackersPath = p.join(providersDir, "quest_tracker", "eo_quest_trackers.json");
+    localEoQuestsMetadataPath = p.join(providersDir, "quest_tracker", "eo_quests_metadata.json");
 
     final tasksDir = p.join(providersDir, "task");
     customTaskDataJsonPath = p.join(tasksDir, "tasks.json");

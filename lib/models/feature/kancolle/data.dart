@@ -28,6 +28,7 @@ import 'map_state.dart';
 import 'operation_queue.dart';
 import 'quest_assistant.dart';
 import 'raw_data.dart';
+import 'quest_eo_tracker.dart';
 import 'quest_fleet_condition.dart';
 import 'quest_progress.dart';
 import 'repair_timer.dart';
@@ -83,7 +84,10 @@ class KancolleData {
     RepairTimerState? repairTimer,
     QuestProgressTracker? questProgress,
   })  : repairTimer = repairTimer ?? _loadRepairTimer(),
-        questProgress = questProgress ?? _loadQuestProgress();
+        questProgress = questProgress ?? _loadQuestProgress() {
+    // 任務の条件の表示 (艦名・装備名) に使う
+    questMasterData = dataInfo;
+  }
 
   KancolleData copyWith({
     OperationQueue? queue,
@@ -798,6 +802,7 @@ class KancolleData {
             rank: '${apiData['api_win_rank'] ?? ''}',
             sunkEnemyShipTypes: sunkEnemyShipTypes(),
             fleet: questFleet(tracker.sortieFleet),
+            firstClear: _intOf(apiData['api_first_clear']) == 1,
           );
         case '/api_req_practice/battle':
           tracker.practiceFleet = _intOf(params?['api_deck_id']);
@@ -814,6 +819,7 @@ class KancolleData {
           tracker.onExpeditionResult(
             missionId: missionId,
             success: (_intOf(apiData['api_clear_result']) ?? 0) != 0,
+            fleet: questFleet(deckId),
           );
         case '/api_req_nyukyo/start':
           tracker.onDocking();
@@ -835,6 +841,7 @@ class KancolleData {
                   itemId: equipment.itemId ?? 0,
                   category: (equipment.type?.length ?? 0) > 2 ? equipment.type![2] : 0,
                   icon: (equipment.type?.length ?? 0) > 3 ? equipment.type![3] : 0,
+                  cardType: (equipment.type?.length ?? 0) > 1 ? equipment.type![1] : 0,
                 )
           ]);
         case '/api_req_kousyou/remodel_slot':

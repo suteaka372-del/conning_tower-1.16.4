@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:math' as math;
 
+import 'quest_eo_tracker.dart';
 import 'quest_fleet_condition.dart';
 import 'quest_tree.dart';
 import 'repair_timer.dart';
@@ -25,6 +26,19 @@ enum QuestCounterKind {
   discard,
   improvement,
   modernization,
+
+  // ElectronicObserver EN の任務トラッカー (quest_eo_tracker.dart) で使う
+  /// ボス戦 ([QuestCounter.areas] の海域、[QuestCounter.minRank] 以上)
+  bossBattle,
+
+  /// 指定したマス ([QuestCounter.cells]) での戦闘 (ボスでなくてもよい)
+  nodeBattle,
+
+  /// 指定したマスに到達
+  nodeReach,
+
+  /// 海域の初回クリア (ゲージ破壊)
+  mapFirstClear,
 }
 
 /// 勝利ランク (EO Constants.GetWinRank)
@@ -55,8 +69,9 @@ class DiscardedEquipment {
   final int itemId;
   final int category; // api_type[2]
   final int icon; // api_type[3]
+  final int cardType; // api_type[1]
 
-  const DiscardedEquipment({required this.itemId, required this.category, required this.icon});
+  const DiscardedEquipment({required this.itemId, required this.category, required this.icon, this.cardType = 0});
 }
 
 /// 任務の条件1つ分のカウンタ
@@ -77,8 +92,11 @@ class QuestCounter {
   /// discard: true=個数, false=回数
   final bool countsAmount;
 
-  /// discard: -1=装備ID, 2=カテゴリ(api_type[2]), 3=アイコン(api_type[3])
+  /// discard: -1=装備ID, 1=図鑑の分類(api_type[1]), 2=カテゴリ(api_type[2]), 3=アイコン(api_type[3])
   final int categoryIndex;
+
+  /// nodeBattle / nodeReach: 対象のマス (api_no)
+  final Set<int>? cells;
 
   /// 表示用の短い説明 (複数条件の任務で使う)
   final String label;
@@ -103,6 +121,7 @@ class QuestCounter {
     this.label = '',
     this.gauge,
     this.special = false,
+    this.cells,
   });
 
   bool get isCleared => progress >= max;
@@ -122,6 +141,7 @@ class QuestCounter {
     return equipments.where((eq) {
       final value = switch (categoryIndex) {
         -1 => eq.itemId,
+        1 => eq.cardType,
         3 => eq.icon,
         _ => eq.category,
       };
@@ -148,12 +168,32 @@ class QuestDefinition {
   /// 任務名 (編成条件の表示用。第2段階の任務だけ)
   final String? title;
 
+  /// ElectronicObserver EN の任務トラッカーから作った定義か
+  final bool fromEo;
+
+  /// ElectronicObserver EN の任務トラッカーの編成条件
+  final QuestFleetCondition? eoCondition;
+
   const QuestDefinition(this.id, this.counters,
-      {this.shift = 0, this.weightedEqually = false, this.validUntil, this.title});
+      {this.shift = 0,
+      this.weightedEqually = false,
+      this.validUntil,
+      this.title,
+      this.fromEo = false,
+      this.eoCondition});
 
   /// 編成条件 (条件付きで数えるものがある任務だけ)
-  QuestFleetCondition? get condition => kQuestFleetConditions[id];
+  QuestFleetCondition? get condition => fromEo ? eoCondition : kQuestFleetConditions[id];
 }
+
+/// ElectronicObserver EN の任務トラッカーから読み込んだ定義 (組み込みの定義より優先する)
+final Map<int, QuestDefinition> kEoQuestDefinitions = {};
+
+/// ElectronicObserver EN の QuestsMetadata (任務ID -> リセットの種類。1=毎日 2=毎週 3=毎月 4=四半期 5=なし 101〜112=毎年その月)
+final Map<int, int> kEoQuestResetTypes = {};
+
+/// 任務の定義 (ElectronicObserver EN の任務トラッカー → 組み込みの順に探す)
+QuestDefinition? questDefinitionOf(int id) => kEoQuestDefinitions[id] ?? kQuestDefinitions[id];
 
 // ---- 定義用ヘルパー ----
 QuestCounter _battle(int max, String rank,
@@ -1163,6 +1203,7 @@ class QuestProgressEntry {
   Map<String, dynamic> toJson() => {
         'type': questType,
         'progress': [for (final c in counters) c.progress],
+        if (definition.fromEo) 'eo': true,
       };
 }
 
@@ -1211,7 +1252,57 @@ class QuestProgressTracker {
   /// 任務ID -> 報酬の資源 (任務一覧で見たもの。保存はしない)
   final Map<int, List<int>> rewardMaterials = {};
 
+  /// 定義がまだない任務の保存済みの進捗 (ElectronicObserver EN の任務トラッカーを読み込んだら戻す)
+  final Map<int, Map<String, dynamic>> pendingProgress = {};
+
+  /// 任務ID -> 任務の種類・進捗表示 (最後に見た任務一覧。定義を読み込み直したときに使う)
+  final Map<int, (int, int)> _listInfo = {};
+
   QuestProgressEntry? progressOf(int questId) => entries[questId];
+
+  /// 任務の定義が変わったら呼ぶ (ElectronicObserver EN の任務トラッカーを読み込んだとき)。
+  /// 条件の数が同じなら進捗を引き継ぎ、違えば 0 からにしてゲームの 50%/80% 表示で補正する
+  void reloadDefinitions({DateTime? now}) {
+    now ??= DateTime.now();
+    for (final id in {...entries.keys, ...pendingProgress.keys, ...questStates.keys}) {
+      final definition = questDefinitionOf(id);
+      final old = entries[id];
+      final pending = pendingProgress[id];
+      if (definition == null) {
+        if (old != null) {
+          // 定義がなくなった: 進捗は保存しておく (次に読み込めたら戻す)
+          pendingProgress[id] = old.toJson();
+          entries.remove(id);
+        }
+        continue;
+      }
+      if (old != null && identical(old.definition, definition)) continue;
+      final validUntil = definition.validUntil;
+      if (validUntil != null && !now.isBefore(validUntil)) continue;
+      final state = questStates[id];
+      if (old == null && pending == null && state != 1 && state != 2) continue;
+      final (listType, progressFlag) = _listInfo[id] ?? (0, 0);
+      final questType = old?.questType ?? (pending?['type'] as int?) ?? listType;
+      final entry = QuestProgressEntry(definition, questType);
+      final progress = old != null
+          ? [for (final c in old.counters) c.progress]
+          : ((pending?['progress'] as List?)?.whereType<int>().toList() ?? const <int>[]);
+      if (progress.length == entry.counters.length) {
+        for (final (index, counter) in entry.counters.indexed) {
+          counter.progress = min(progress[index], counter.max);
+        }
+      }
+      if (state == 3) {
+        for (final c in entry.counters) {
+          c.progress = c.max;
+        }
+      } else {
+        entry.applyProgressFlag(progressFlag);
+      }
+      entries[id] = entry;
+      pendingProgress.remove(id);
+    }
+  }
 
   // ---- 任務一覧 ----
 
@@ -1222,6 +1313,7 @@ class QuestProgressTracker {
 
     for (final quest in quests) {
       questStates[quest.id] = quest.state;
+      _listInfo[quest.id] = (quest.label >= 100 ? quest.label : quest.type, quest.progressFlag);
       final materials = quest.materials;
       if (materials != null && materials.length >= 4) rewardMaterials[quest.id] = materials.sublist(0, 4);
       if (quest.state == 3) {
@@ -1234,7 +1326,7 @@ class QuestProgressTracker {
         }
         continue;
       }
-      final definition = kQuestDefinitions[quest.id];
+      final definition = questDefinitionOf(quest.id);
       if (definition == null) continue;
       final validUntil = definition.validUntil;
       if (validUntil != null && !now.isBefore(validUntil)) continue;
@@ -1250,6 +1342,7 @@ class QuestProgressTracker {
     allTab.onCleared(questId);
     entries.remove(questId);
     questStates.remove(questId);
+    pendingProgress.remove(questId);
   }
 
   void onQuestStop(int questId) {
@@ -1270,6 +1363,21 @@ class QuestProgressTracker {
     final crossedQuarter = _quarterKey(prev) != _quarterKey(cur);
 
     bool shouldReset(int id, int type) {
+      // ElectronicObserver EN の QuestsMetadata にあれば、そのリセットの種類を使う
+      switch (kEoQuestResetTypes[id]) {
+        case 1:
+          return crossedDay;
+        case 2:
+          return crossedWeek;
+        case 3:
+          return crossedMonth;
+        case 4:
+          return crossedQuarter;
+        case 5:
+          return false;
+        case final int month when month > 100 && month <= 112:
+          return _yearKey(prev, month - 100) != _yearKey(cur, month - 100);
+      }
       if (crossedDay && (type == 1 || _kDailyResetQuestIds.contains(id))) return true;
       if (crossedWeek && type == 2) return true;
       if (crossedMonth && type == 3) return true;
@@ -1289,6 +1397,7 @@ class QuestProgressTracker {
       entries.remove(id);
       questStates.remove(id);
     }
+    pendingProgress.removeWhere((id, value) => shouldReset(id, value['type'] as int? ?? 0));
   }
 
   /// JST 5:00 を日付の区切りとした「ゲーム内の日時」(UTC 基準で +9h -5h)
@@ -1346,16 +1455,48 @@ class QuestProgressTracker {
     _cell = cell;
     // 船団護衛成功イベント
     if (eventId == 8) _countBattle(0, isEndPoint, fleet: fleet);
+    // マスへの到達 (ElectronicObserver EN の NodeReach)
+    for (final (entry, c) in _activeEntries(QuestCounterKind.nodeReach)) {
+      if (!(c.areas?.contains(mapId) ?? false) || !(c.cells?.contains(cell) ?? false)) continue;
+      if (!_meetsCondition(entry, c, fleet, countWithoutFleet: true)) continue;
+      c.add();
+    }
   }
 
   /// api_req_sortie/battleresult, api_req_combined_battle/battleresult
-  void onBattleResult({required String rank, required List<int> sunkEnemyShipTypes, QuestFleet? fleet}) {
+  /// ([firstClear] は api_first_clear: 海域を初めてクリアした)
+  void onBattleResult(
+      {required String rank, required List<int> sunkEnemyShipTypes, QuestFleet? fleet, bool firstClear = false}) {
     for (final shipType in sunkEnemyShipTypes) {
       for (final c in _activeCounters(QuestCounterKind.slaughter)) {
         if (c.targets?.contains(shipType) ?? false) c.add();
       }
     }
-    _countBattle(winRankValue(rank), _eventId == 5, fleet: fleet);
+    final value = winRankValue(rank);
+    final isBoss = _eventId == 5;
+    _countBattle(value, isBoss, fleet: fleet);
+    _countEoBattle(value, isBoss, firstClear, fleet);
+  }
+
+  /// ElectronicObserver EN の任務トラッカーの戦闘 (ボス戦・指定マスでの戦闘・初回クリア)
+  void _countEoBattle(int rank, bool isBoss, bool firstClear, QuestFleet? fleet) {
+    final areaId = _mapId ?? -1;
+    bool inArea(QuestCounter c) => c.areas?.contains(areaId) ?? false;
+    for (final (entry, c) in _activeEntries(QuestCounterKind.bossBattle)) {
+      if (!isBoss || !inArea(c) || rank < c.minRank) continue;
+      if (!_meetsCondition(entry, c, fleet, countWithoutFleet: true)) continue;
+      c.add();
+    }
+    for (final (entry, c) in _activeEntries(QuestCounterKind.nodeBattle)) {
+      if (!inArea(c) || !(c.cells?.contains(_cell) ?? false) || rank < c.minRank) continue;
+      if (!_meetsCondition(entry, c, fleet, countWithoutFleet: true)) continue;
+      c.add();
+    }
+    for (final (entry, c) in _activeEntries(QuestCounterKind.mapFirstClear)) {
+      if (!isBoss || !firstClear || !inArea(c)) continue;
+      if (!_meetsCondition(entry, c, fleet, countWithoutFleet: true)) continue;
+      c.add();
+    }
   }
 
   void _countBattle(int rank, bool isBoss, {QuestFleet? fleet}) {
@@ -1378,10 +1519,13 @@ class QuestProgressTracker {
     }
   }
 
-  void onExpeditionResult({required int missionId, required bool success}) {
+  /// [fleet] は遠征から帰った艦隊 (編成条件付きの遠征任務の判定用)
+  void onExpeditionResult({required int missionId, required bool success, QuestFleet? fleet}) {
     if (!success) return;
-    for (final c in _activeCounters(QuestCounterKind.expedition)) {
-      if (c.areas == null || c.areas!.contains(missionId)) c.add();
+    for (final (entry, c) in _activeEntries(QuestCounterKind.expedition)) {
+      if (c.areas != null && !c.areas!.contains(missionId)) continue;
+      if (!_meetsCondition(entry, c, fleet, countWithoutFleet: false)) continue;
+      c.add();
     }
   }
 
@@ -1421,7 +1565,10 @@ class QuestProgressTracker {
   String encode() => jsonEncode({
         'lastUpdate': lastUpdate?.toUtc().toIso8601String(),
         'states': {for (final e in questStates.entries) '${e.key}': e.value},
-        'entries': {for (final e in entries.entries) '${e.key}': e.value.toJson()},
+        'entries': {
+          for (final e in pendingProgress.entries) '${e.key}': e.value,
+          for (final e in entries.entries) '${e.key}': e.value.toJson(),
+        },
         'allTab': allTab.toJson(),
       });
 
@@ -1440,15 +1587,21 @@ class QuestProgressTracker {
       final entries = json['entries'] as Map<String, dynamic>? ?? {};
       for (final e in entries.entries) {
         final id = int.tryParse(e.key);
-        final definition = id == null ? null : kQuestDefinitions[id];
         final value = e.value;
-        if (definition == null || value is! Map<String, dynamic>) continue;
+        if (id == null || value is! Map<String, dynamic>) continue;
+        final definition = questDefinitionOf(id);
+        // ElectronicObserver EN の任務トラッカーで数えていた任務は、それを読み込むまで取っておく
+        // (先に組み込みの定義で読むと、条件の数が違うときに進捗が消えるため)
+        if (definition == null || (value['eo'] == true && !definition.fromEo)) {
+          tracker.pendingProgress[id] = value;
+          continue;
+        }
         final entry = QuestProgressEntry(definition, value['type'] as int? ?? 0);
         final progress = (value['progress'] as List?)?.whereType<int>().toList() ?? [];
         for (final (index, counter) in entry.counters.indexed) {
           if (index < progress.length) counter.progress = min(progress[index], counter.max);
         }
-        tracker.entries[id!] = entry;
+        tracker.entries[id] = entry;
       }
     } catch (_) {
       return QuestProgressTracker();
@@ -1477,6 +1630,31 @@ String _winText(int rank) => rank >= 6
     : rank >= 2
         ? ' ${_rankLabel(rank)}${repairText('勝利以上', '+')}'
         : '';
+
+/// 指定マスの説明 (7-3-2、1-6 N、7-3 (マス 18・23) など)
+String _nodeWhere(QuestCounter c) {
+  final areas = c.areas ?? const <int>{};
+  final map = areas.isEmpty ? '' : _areaText(areas.first);
+  if (c.label.startsWith('-')) return '$map${c.label}';
+  if (c.label.isNotEmpty) return '$map ${c.label}';
+  final cells = (c.cells?.toList() ?? <int>[])..sort();
+  return '$map (${repairText('マス', 'cell')} ${cells.join('・')})';
+}
+
+/// 廃棄する装備の名前 (ラベルがなければマスターデータから)
+String _discardTarget(QuestCounter c) {
+  if (c.label.isNotEmpty) return c.label;
+  final targets = c.targets;
+  if (targets == null || targets.isEmpty) return repairText('装備', 'equipment');
+  return targets
+      .map((t) => switch (c.categoryIndex) {
+            -1 => questEquipmentName(t),
+            1 => questEquipmentCardTypeName(t),
+            3 => questEquipmentIconTypeName(t),
+            _ => questEquipmentTypeName(t),
+          })
+      .join('・');
+}
 
 /// 条件1つ分の説明 ("2-2 ボス S勝利 1回" など)。[missionName] は遠征IDから遠征名を引く
 String questCounterConditionText(QuestCounter c, {String? Function(int missionId)? missionName}) {
@@ -1530,8 +1708,22 @@ String questCounterConditionText(QuestCounter c, {String? Function(int missionId
       return '${repairText('装備改修', 'Improvement')} $times';
     case QuestCounterKind.modernization:
       return '${repairText('近代化改修', 'Modernization')} $times';
+    case QuestCounterKind.bossBattle:
+      final where = (c.areas?.toList() ?? <int>[]).map(_areaText).join('・');
+      return c.minRank <= 1
+          ? repairText('$where ボス戦 $times', '$where boss battle $times')
+          : '$where${repairText(' ボス', ' boss')}${_winText(c.minRank)} $times';
+    case QuestCounterKind.nodeBattle:
+      return c.minRank <= 1
+          ? repairText('${_nodeWhere(c)} 戦闘 $times', '${_nodeWhere(c)} battle $times')
+          : '${_nodeWhere(c)}${_winText(c.minRank)} $times';
+    case QuestCounterKind.nodeReach:
+      return repairText('${_nodeWhere(c)} 到達 $times', 'Reach ${_nodeWhere(c)} $times');
+    case QuestCounterKind.mapFirstClear:
+      final where = (c.areas?.toList() ?? <int>[]).map(_areaText).join('・');
+      return repairText('$where 海域突破 (ゲージ破壊) $times', 'Clear $where $times');
     case QuestCounterKind.discard:
-      final what = c.label.isNotEmpty ? c.label : repairText('装備', 'equipment');
+      final what = _discardTarget(c);
       return c.countsAmount
           ? repairText('$whatを廃棄 $count個', 'Scrap $count $what')
           : repairText('$whatを廃棄 $times', 'Scrap $what $times');
@@ -1551,18 +1743,28 @@ String questProgressFlagText(int? flag, int? state) {
 // ---- 艦隊タブの「受注中の任務の編成条件」 ----
 
 /// 任務の対象 (1-2・1-3 ボスS、演習 S勝利 など)
+const _sortieKinds = {
+  QuestCounterKind.battle,
+  QuestCounterKind.bossBattle,
+  QuestCounterKind.nodeBattle,
+  QuestCounterKind.nodeReach,
+  QuestCounterKind.mapFirstClear,
+};
+
 String questTargetText(List<QuestCounter> counters) {
-  final battles = counters.where((c) => c.kind == QuestCounterKind.battle).toList();
+  final battles = counters.where((c) => _sortieKinds.contains(c.kind)).toList();
   if (battles.isNotEmpty) {
     final labels = <String>{
       for (final c in battles)
-        if (c.label.isNotEmpty)
+        if (c.kind == QuestCounterKind.nodeBattle || c.kind == QuestCounterKind.nodeReach)
+          _nodeWhere(c)
+        else if (c.label.isNotEmpty)
           c.label
         else
           for (final area in (c.areas ?? const <int>{}).toList()..sort()) '${area ~/ 10}-${area % 10}'
     }.join('・');
     final ranks = battles.map((c) => c.minRank).toSet();
-    final boss = battles.every((c) => c.bossOnly);
+    final boss = battles.every((c) => c.bossOnly || c.kind == QuestCounterKind.bossBattle);
     if (ranks.length == 1 && ranks.first > 0) {
       return '$labels ${boss ? repairText('ボス', 'boss ') : ''}${_rankLabel(ranks.first)}';
     }
@@ -1608,7 +1810,7 @@ List<QuestConditionItem> questConditionItems({
   final ids = titles.keys.toList()..sort();
   final items = <QuestConditionItem>[];
   for (final id in ids) {
-    final definition = kQuestDefinitions[id];
+    final definition = questDefinitionOf(id);
     final condition = definition?.condition;
     if (definition == null || condition == null) continue;
     final validUntil = definition.validUntil;

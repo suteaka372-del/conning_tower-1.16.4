@@ -2,6 +2,7 @@ import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_tree.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/providers/eo_quest_tracker_provider.dart';
 import 'package:conning_tower/providers/quest_tree_provider.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:flutter/cupertino.dart';
@@ -119,6 +120,12 @@ class _QuestTreeNotAppearedViewState extends ConsumerState<QuestTreeNotAppearedV
       await ref.read(questTreeProvider.notifier).refresh();
     } catch (_) {
       _refreshError = repairText('更新できませんでした', 'Could not update');
+    }
+    // 任務の進捗の数え方 (ElectronicObserver EN の任務トラッカー) も取り直す
+    try {
+      await EoQuestTrackerLoader.load(force: true);
+    } catch (_) {
+      _refreshError ??= repairText('任務トラッカーを更新できませんでした', 'Could not update quest trackers');
     }
     if (mounted) setState(() => _refreshing = false);
   }

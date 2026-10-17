@@ -7,6 +7,7 @@ import 'package:conning_tower/models/feature/kancolle/fleet.dart';
 import 'package:conning_tower/models/feature/kancolle/operation_queue.dart';
 import 'package:conning_tower/models/feature/kancolle/sea_force_base.dart';
 import 'package:conning_tower/models/feature/kancolle/squad.dart';
+import 'package:conning_tower/providers/eo_quest_tracker_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -64,6 +65,14 @@ final kancolleDataProvider = StateProvider<KancolleData>((ref) {
   );
 
   data.loadCachedData();
+
+  // ElectronicObserver EN の任務トラッカー: 読み込めたら任務の進捗を新しい定義に合わせ、画面を更新する
+  EoQuestTrackerLoader.onUpdated = () {
+    final current = ref.controller.state;
+    current.questProgress.reloadDefinitions();
+    ref.controller.state = current.copyWith();
+  };
+  EoQuestTrackerLoader.load();
 
   return data;
 });

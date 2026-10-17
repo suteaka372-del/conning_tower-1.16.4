@@ -4,6 +4,7 @@ import 'package:conning_tower/models/feature/kancolle/quest_fleet_condition.dart
 import 'package:conning_tower/models/feature/kancolle/quest_progress.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_tree.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/providers/eo_quest_tracker_provider.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/providers/quest_tree_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
@@ -225,7 +226,7 @@ class QuestDetailPage extends ConsumerWidget {
     final quest = readyQuest ?? doneQuest;
     final info = tree?.quests[questId];
     final tracker = data.questProgress;
-    final definition = kQuestDefinitions[questId];
+    final definition = questDefinitionOf(questId);
     final entry = tracker.progressOf(questId);
 
     // 達成 (報酬待ち) またはクリア済み
@@ -338,8 +339,17 @@ class QuestDetailPage extends ConsumerWidget {
       conditionFooter = repairText('編成条件を満たした艦隊での戦闘・演習だけ数えます (下の「編成チェック」)。',
           'Only counted with a fleet that meets the composition (see below).');
     } else {
-      conditionFooter = repairText('回数はこの端末で数えたものです (ElectronicObserver の条件を移植)。',
-          'Counted on this device (ported from ElectronicObserver).');
+      conditionFooter = repairText('回数はこの端末で数えたものです。', 'Counted on this device.');
+    }
+    final eoUpdatedAt = EoQuestTrackerLoader.updatedAt;
+    final String? conditionSource;
+    if (definition == null || expired) {
+      conditionSource = null;
+    } else if (definition.fromEo) {
+      final date = eoUpdatedAt == null ? '' : ' (${eoUpdatedAt.month}/${eoUpdatedAt.day} 取得)';
+      conditionSource = repairText('条件: ElectronicObserver EN の任務トラッカー$date', 'Conditions: ElectronicObserver EN quest trackers');
+    } else {
+      conditionSource = repairText('条件: ElectronicObserver から移植した定義', 'Conditions: ported from ElectronicObserver');
     }
 
     // ---- 編成チェック ----
@@ -450,7 +460,7 @@ class QuestDetailPage extends ConsumerWidget {
               ]),
               QuestDetailSection(
                 title: repairText('必要条件と達成度', 'Requirements and progress'),
-                footer: conditionFooter,
+                footer: conditionSource == null ? conditionFooter : '$conditionFooter\n$conditionSource',
                 children: conditionChildren,
               ),
               if (showFleetCheck)
