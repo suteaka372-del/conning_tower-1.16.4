@@ -103,6 +103,13 @@ void main() {
       expect(parseEoQuestTrackers('{"broken": true}'), isEmpty);
     });
 
+    test('the files on GitHub start with a BOM', () {
+      // EO EN の Data リポジトリのファイルは BOM (EF BB BF) 付き。utf8.decode は外すが、念のため文字列に残っていても読む
+      expect(utf8.decode([0xEF, 0xBB, 0xBF, ...utf8.encode('[]')]), '[]');
+      expect(parseEoQuestTrackers('﻿$_trackersJson').keys, contains(1038));
+      expect(parseEoQuestsMetadata('﻿$_metadataJson'), {1038: 1});
+    });
+
     test('the EO definition is used before the built-in one, except for empty trackers', () {
       applyEoQuestTrackers(parseEoQuestTrackers(_trackersJson), {});
       expect(questDefinitionOf(201)!.fromEo, isTrue);
@@ -198,6 +205,9 @@ void main() {
       expect(progress(930, 1), 1);
       expect(progress(930, 0), 0);
       expect(tracker.progressOf(930)!.percentage, 0.5); // EO と同じく条件ごとの割合の平均
+      // 任務タブの一覧の内訳 (EO と同じく短く)
+      expect(tracker.progressOf(930)!.details, ['1-4ボスS 0/1', '7-3-2 S 1/1']);
+      expect(tracker.progressOf(1038)!.details, ['1-1ボスS 1/4', '1-3ボスS 0/4']);
     });
 
     test('node reach, first clear, exercise, expedition and scrapping', () {

@@ -1176,11 +1176,21 @@ class QuestProgressEntry {
   List<String> get details => [for (final c in counters) '${counterLabel(c)} ${c.progress}/${c.max}'];
 
   static String counterLabel(QuestCounter c) {
-    if (c.label.isNotEmpty) return c.label;
+    // マス指定のラベル (-2、N など) は海域と合わせて表示する
+    final isNode = c.kind == QuestCounterKind.nodeBattle || c.kind == QuestCounterKind.nodeReach;
+    if (c.label.isNotEmpty && !isNode) return c.label;
+    final area = (c.areas?.toList() ?? <int>[]).map(_areaText).join('・');
+    final rank = c.minRank >= 2 ? _rankLabel(c.minRank) : '';
     return switch (c.kind) {
       QuestCounterKind.battle => c.minRank >= 5 ? '${_rankLabel(c.minRank)}勝利' : '勝利',
-      QuestCounterKind.practice => '演習',
+      QuestCounterKind.practice => rank.isEmpty ? '演習' : '演習$rank',
       QuestCounterKind.expedition => '遠征',
+      // ElectronicObserver EN の任務トラッカー (EO と同じく「2-1ボスS」のように短く)
+      QuestCounterKind.bossBattle => repairText('$areaボス$rank', '$area boss $rank'),
+      QuestCounterKind.nodeBattle => '${_nodeWhere(c)}${rank.isEmpty ? '' : ' $rank'}',
+      QuestCounterKind.nodeReach => repairText('${_nodeWhere(c)}到達', 'reach ${_nodeWhere(c)}'),
+      QuestCounterKind.mapFirstClear => repairText('$area突破', 'clear $area'),
+      QuestCounterKind.discard => _discardTarget(c),
       _ => '',
     };
   }

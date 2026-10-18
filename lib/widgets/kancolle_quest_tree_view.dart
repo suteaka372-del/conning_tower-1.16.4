@@ -246,6 +246,7 @@ class _QuestTreeNotAppearedViewState extends ConsumerState<QuestTreeNotAppearedV
                 child: Text(
                   '${repairText('未出現', 'Not appeared')} ${quests.length}${repairText('件', '')}'
                   '  ${repairText('データ', 'Data')} ${_dateText(data.updatedAt)}'
+                  '\n${EoQuestTrackerLoader.statusText(text: repairText)}'
                   '${_refreshError == null ? '' : '  $_refreshError'}',
                   style: secondaryStyle,
                 ),

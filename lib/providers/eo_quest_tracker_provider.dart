@@ -13,11 +13,19 @@ class EoQuestTrackerLoader {
   static const _maxAge = Duration(hours: 24);
   static const _timeout = Duration(seconds: 15);
 
+  /// 取得に失敗したあと、もう一度試すまでの間隔
+  static const _retryInterval = Duration(minutes: 5);
+
   /// 使っているデータを取得した時刻 (まだなければ null)
   static DateTime? updatedAt;
 
   /// 読み込めた任務の数
   static int count = 0;
+
+  /// 最後に取得・読み込みに失敗した理由 (成功したら null)
+  static String? lastError;
+
+  static DateTime? _lastAttempt;
 
   /// 新しいデータを使い始めたときに呼ぶ (任務の進捗を定義に合わせ直す)
   static void Function()? onUpdated;
@@ -33,7 +41,16 @@ class EoQuestTrackerLoader {
     return _running ??= _load(force).whenComplete(() => _running = null);
   }
 
+  /// まだ読み込めていなければ取り直す (失敗していたら [_retryInterval] おき)。任務一覧を受け取ったときに呼ぶ
+  static void retryIfMissing() {
+    if (updatedAt != null || _running != null) return;
+    final last = _lastAttempt;
+    if (last != null && DateTime.now().difference(last) < _retryInterval) return;
+    load().catchError((_) {});
+  }
+
   static Future<void> _load(bool force) async {
+    _lastAttempt = DateTime.now();
     DateTime? cachedAt;
     try {
       if (updatedAt == null && _trackersFile.existsSync()) {
@@ -41,12 +58,16 @@ class EoQuestTrackerLoader {
         final metadata = _metadataFile.existsSync() ? await _metadataFile.readAsString() : null;
         _apply(await _trackersFile.readAsString(), metadata, cachedAt);
       }
-    } catch (_) {}
+    } catch (e) {
+      lastError = '$e';
+    }
     final last = updatedAt ?? cachedAt;
     if (!force && last != null && DateTime.now().difference(last) < _maxAge) return;
     try {
       await _download();
-    } catch (_) {
+      lastError = null;
+    } catch (e) {
+      lastError = '$e';
       if (force) rethrow;
     }
   }
@@ -80,7 +101,24 @@ class EoQuestTrackerLoader {
     applyEoQuestTrackers(definitions, resetTypes);
     updatedAt = time;
     count = definitions.length;
-    onUpdated?.call();
+    lastError = null;
+    try {
+      onUpdated?.call();
+    } catch (_) {}
     return true;
+  }
+
+  /// 状態の表示 (任務トラッカー 174件 10/18取得 / 未取得 など)
+  static String statusText({required String Function(String ja, String en) text}) {
+    final time = updatedAt;
+    if (time != null) {
+      final t = time.toLocal();
+      return text('任務トラッカー $count件 (${t.month}/${t.day} 取得)', 'Quest trackers: $count (${t.month}/${t.day})');
+    }
+    if (_running != null) return text('任務トラッカーを取得中', 'Loading quest trackers');
+    final error = lastError;
+    return error == null
+        ? text('任務トラッカー: 未取得', 'Quest trackers: not loaded')
+        : text('任務トラッカーを取得できませんでした ($error)', 'Could not load quest trackers ($error)');
   }
 }

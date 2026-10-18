@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/providers/eo_quest_tracker_provider.dart';
 import 'package:conning_tower/models/data/data_model_adapter.dart';
 import 'package:conning_tower/models/data/kcsapi/kcsapi.dart';
 import 'package:conning_tower/models/data/kcsapi/ship_data.dart';
@@ -778,6 +779,8 @@ class KancolleData {
       final tracker = questProgress;
       switch (path) {
         case '/api_get_member/questlist':
+          // ElectronicObserver EN の任務トラッカーをまだ読み込めていなければ取り直す
+          EoQuestTrackerLoader.retryIfMissing();
           final list = apiData is Map ? apiData['api_list'] : null;
           if (list is! List) return;
           tracker.onQuestList([

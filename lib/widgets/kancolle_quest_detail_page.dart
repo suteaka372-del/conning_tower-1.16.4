@@ -328,13 +328,17 @@ class QuestDetailPage extends ConsumerWidget {
         child: Text(info.memo, style: secondaryStyle),
       ));
     }
-    final String conditionFooter;
+    String conditionFooter;
     if (expired) {
       conditionFooter = repairText('期間を過ぎた任務なので回数は数えていません。達成度はゲームの表示 (50%/80%) だけです。',
           'This quest is past its period; only the game\'s 50%/80% is shown.');
     } else if (counters == null) {
       conditionFooter = repairText('この任務は回数を数えていません。達成度はゲームの表示 (50%/80%) です。条件は説明文と補足を見てください。',
           'This quest is not counted; progress is the game\'s 50%/80%.');
+      // 任務トラッカーを読み込めていないときは、その理由も出す
+      if (EoQuestTrackerLoader.updatedAt == null) {
+        conditionFooter = '$conditionFooter\n${EoQuestTrackerLoader.statusText(text: repairText)}';
+      }
     } else if (definition?.condition != null) {
       conditionFooter = repairText('編成条件を満たした艦隊での戦闘・演習だけ数えます (下の「編成チェック」)。',
           'Only counted with a fleet that meets the composition (see below).');

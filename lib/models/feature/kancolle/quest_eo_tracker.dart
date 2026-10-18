@@ -474,8 +474,11 @@ QuestDefinition? parseEoQuestTracker(dynamic value) {
 }
 
 /// QuestTrackers.json を読む。読めない任務は飛ばす (全部読めなければ空)
+/// 先頭の BOM (EF BB BF) を除いて JSON を読む。EO EN のデータは BOM 付きの UTF-8 で、そのままでは jsonDecode が失敗する
+dynamic decodeEoJson(String json) => jsonDecode(json.startsWith('\uFEFF') ? json.substring(1) : json);
+
 Map<int, QuestDefinition> parseEoQuestTrackers(String json) {
-  final decoded = jsonDecode(json);
+  final decoded = decodeEoJson(json);
   if (decoded is! List) return {};
   return {
     for (final tracker in decoded)
@@ -485,7 +488,7 @@ Map<int, QuestDefinition> parseEoQuestTrackers(String json) {
 
 /// QuestsMetadata.json を読む (任務ID -> リセットの種類)
 Map<int, int> parseEoQuestsMetadata(String json) {
-  final decoded = jsonDecode(json);
+  final decoded = decodeEoJson(json);
   if (decoded is! List) return {};
   return {
     for (final item in decoded)
