@@ -13,6 +13,7 @@ import 'package:conning_tower/pages/webview.dart';
 import 'package:conning_tower/providers/generatable/settings_provider.dart';
 import 'package:conning_tower/providers/raw_data_provider.dart';
 import 'package:conning_tower/providers/web_info_provider.dart';
+import 'package:conning_tower/utils/kancolle_origin.dart';
 import 'package:conning_tower/utils/toast.dart';
 import 'package:conning_tower/widgets/webview_tab.dart';
 import 'package:flutter/cupertino.dart';
@@ -251,7 +252,8 @@ class WebController extends _$WebController {
     if (uri.rawValue.startsWith(kLocalHomeUrl)) {
       await controller.evaluateJavascript(
         source:
-            "input.value='$customHomeUrl';input.placeholder='🔍 ${S.current.AssetsHtmlSearchBarText}';goButton.textContent='${S.current.AssetsHtmlSearchBarGo}';",
+            // 文字列は JSON で埋め込む (URL に ' などが入っていてもスクリプトとして解釈されないように)
+            "input.value=${jsonEncode(customHomeUrl)};input.placeholder=${jsonEncode('🔍 ${S.current.AssetsHtmlSearchBarText}')};goButton.textContent=${jsonEncode(S.current.AssetsHtmlSearchBarGo)};",
       );
     }
 
@@ -467,9 +469,29 @@ class WebController extends _$WebController {
     Toast.show(title: S.current.MsgUnmuteGame);
   }
 
-  void _kancolleMessageHandle(WebMessage message) {
+  /// 受け取らなかった送り元 (同じ送り元のお知らせは1回だけ)
+  final Set<String> _rejectedOrigins = {};
+
+  void _kancolleMessageHandle(WebMessage message, String? sourceOrigin) {
     var json = jsonDecode(message.data);
     var messageData = WebMessageData.fromJson(json);
+
+    // ゲームサーバー以外 (別のページや広告) から届いたデータは使わない
+    if (!isTrustedKancolleMessage(sourceOrigin: sourceOrigin, responseUrl: messageData.responseUrl)) {
+      final origin = sourceOrigin ?? '';
+      log("kcsapi message ignored: origin=$origin url=${messageData.responseUrl}");
+      // DMM のページ (ゲームの外枠) からの呼び出しはアプリで使わないので、黙って無視する
+      final fromDmm = Uri.tryParse(origin)?.host.toLowerCase().endsWith('dmm.com') ?? false;
+      if (!fromDmm && _rejectedOrigins.add(origin)) {
+        Toast.show(
+          title: Intl.getCurrentLocale().startsWith('ja')
+              ? 'ゲームサーバー以外からのデータを無視しました'
+              : 'Ignored game data from outside the game server',
+          description: origin.isEmpty ? '(origin unknown)' : origin,
+        );
+      }
+      return;
+    }
 
     // log("type: ${messageData.type}");
     // log("request: ${messageData.requestUrl}");
@@ -501,7 +523,7 @@ class WebController extends _$WebController {
       WebMessageListener kcListener = WebMessageListener(
         jsObjectName: "kcMessage",
         onPostMessage: (message, sourceOrigin, isMainFrame, replyProxy) {
-          _kancolleMessageHandle(message!);
+          _kancolleMessageHandle(message!, sourceOrigin?.toString());
         },
       );
       // WebMessageListener kcCaptureListener = WebMessageListener(
@@ -544,7 +566,8 @@ class WebController extends _$WebController {
   @Deprecated("use UserScript to Intercept")
   Future<WebResourceResponse?>? onShouldInterceptRequest(
       WebResourceRequest request) {
-    if (useKancolleListener && request.url.path.contains("/kcs2/js/main.js")) {
+    // ゲームサーバーの main.js だけに差し込む
+    if (useKancolleListener && request.url.path.contains("/kcs2/js/main.js") && isKancolleGameHost(request.url.host)) {
       Future<WebResourceResponse?> customResponse = _interceptRequest(request);
       return customResponse;
     }
