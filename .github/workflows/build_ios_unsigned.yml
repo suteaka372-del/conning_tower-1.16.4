@@ -32,6 +32,14 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/ios/iphoneos/Runner.app Payload/
+          # App.framework/App は arm64 だけの universal (fat) 形式で出力される。
+          # iPASide などの署名ツールが fat 形式を壊すため、普通の arm64 形式にしておく
+          app_bin=Payload/Runner.app/Frameworks/App.framework/App
+          if lipo -info "$app_bin" | grep -q '^Architectures in the fat file'; then
+            lipo "$app_bin" -thin arm64 -output "$app_bin.thin"
+            mv "$app_bin.thin" "$app_bin"
+          fi
+          lipo -info "$app_bin"
           zip -qry ConningTower-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
