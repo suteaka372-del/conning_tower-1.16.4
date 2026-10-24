@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write # 古い実行を消すため
 
 concurrency:
   group: dev-stats
@@ -56,3 +57,17 @@ jobs:
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "Development stats $(date -u +%F)"
           git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data
+
+      # 毎日動くので、このワークフローの古い実行を消して、今回を含め直近3件だけ残す
+      - name: Delete old runs (keep the latest 3)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/workflows/dev_stats.yml/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status == "completed") | .id' \
+            | tail -n +3 \
+            | while read -r id; do
+                echo "delete run $id"
+                gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/runs/$id" || true
+              done

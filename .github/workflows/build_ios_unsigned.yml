@@ -7,6 +7,10 @@ name: Build iOS (unsigned IPA)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write # 古い実行を消すため
+
 jobs:
   build:
     runs-on: macos-15
@@ -46,3 +50,18 @@ jobs:
         with:
           name: ConningTower-unsigned-ipa
           path: ConningTower-unsigned.ipa
+
+      # ビルドが成功したら、このワークフローの古い実行 (と IPA) を消して、今回を含め直近3件だけ残す。
+      # 失敗したときは消さない (前の IPA を残すため)。片付けに失敗してもビルドは失敗にしない
+      - name: Delete old runs (keep the latest 3)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/workflows/build_ios_unsigned.yml/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status == "completed") | .id' \
+            | tail -n +3 \
+            | while read -r id; do
+                echo "delete run $id"
+                gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/runs/$id" || true
+              done
