@@ -16,6 +16,7 @@ class PathUtil {
   late String localKcanotifyQuestsPath;
   late String localEoQuestTrackersPath;
   late String localEoQuestsMetadataPath;
+  late String localDevStatsPath;
 
   late String localL10nSlotItemPath;
   late String localL10nUseItemInImprovePath;
@@ -43,6 +44,7 @@ class PathUtil {
     localKcanotifyQuestsPath = p.join(providersDir, "quest_tree", "kcanotify_quests_jp.json");
     localEoQuestTrackersPath = p.join(providersDir, "quest_tracker", "eo_quest_trackers.json");
     localEoQuestsMetadataPath = p.join(providersDir, "quest_tracker", "eo_quests_metadata.json");
+    localDevStatsPath = p.join(providersDir, "dev_stats", "latest.json");
 
     final tasksDir = p.join(providersDir, "task");
     customTaskDataJsonPath = p.join(tasksDir, "tasks.json");

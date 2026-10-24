@@ -1,5 +1,6 @@
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/pages/dashboard_pages/development_page.dart';
 import 'package:conning_tower/pages/dashboard_pages/battle_info_page.dart';
 import 'package:conning_tower/pages/dashboard_pages/dashboard_settings.dart';
 import 'package:conning_tower/pages/dashboard_pages/opreation_schedule.dart';
@@ -67,6 +68,7 @@ class Dashboard extends ConsumerStatefulWidget {
           S.current.KCDashboardFleet,
           S.current.KCDashboardBattleReport,
           S.current.KCDashboardQuest,
+          repairText('開発', 'Develop'),
           S.current.SettingsButton,
         ],
         children = [
@@ -78,6 +80,7 @@ class Dashboard extends ConsumerStatefulWidget {
           const SquadInfo(),
           const BattleInfoPage(),
           const QuestInfoPage(),
+          const DevelopmentPage(),
           const DashboardSettings(
             settingsType: SettingsType.kancolle,
           ),
@@ -93,6 +96,7 @@ class Dashboard extends ConsumerStatefulWidget {
           S.current.KCDashboardFleet,
           S.current.KCDashboardBattleReport,
           S.current.KCDashboardQuest,
+          repairText('開発', 'Develop'),
           S.current.SettingsButton,
         ],
         children = [
@@ -104,6 +108,7 @@ class Dashboard extends ConsumerStatefulWidget {
           const SquadInfo(),
           const BattleInfoPage(),
           const QuestInfoPage(),
+          const DevelopmentPage(),
           const DashboardSettings(
             settingsType: SettingsType.kancolle,
           ),

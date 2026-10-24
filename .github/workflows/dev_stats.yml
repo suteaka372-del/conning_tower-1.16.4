@@ -1,0 +1,58 @@
+# 装備開発の統計を毎日集計して、data ブランチの devstats/latest.json に置くワークフロー。
+# アプリの「開発」タブがこのファイルを1日1回取りに行く (手で動かす必要はない)。
+# 元データは poi の公開データ (https://api.poi.moe/dump/createitemrecords.gz、毎日更新・毎月リセット)。
+# 月ごとの集計を残しておき、直近3か月分を合わせて使う。
+# data ブランチは毎回1つのコミットに作り直す (毎日の更新で履歴が増え続けないように)。
+name: Development stats
+
+on:
+  schedule:
+    - cron: '0 17 * * *' # 毎日 2:00 (日本時間)。poi のデータは 1:00 ごろ更新される
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dev-stats
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test aggregator
+        run: node --test tool/dev_stats/aggregate.test.mjs
+
+      - name: Restore saved months
+        run: |
+          mkdir -p out/devstats
+          if git ls-remote --exit-code --heads origin data >/dev/null; then
+            git fetch --depth=1 origin data
+            git archive FETCH_HEAD devstats | tar -x -C out || true
+          fi
+          ls -la out/devstats
+
+      - name: Download poi development records
+        run: curl -fsSL --retry 3 --retry-delay 30 -o createitemrecords.gz https://api.poi.moe/dump/createitemrecords.gz
+
+      - name: Aggregate
+        run: node tool/dev_stats/aggregate.mjs createitemrecords.gz out/devstats
+
+      - name: Publish to data branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp tool/dev_stats/DATA_README.md out/README.md
+          cd out
+          git init -q -b data
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Development stats $(date -u +%F)"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data

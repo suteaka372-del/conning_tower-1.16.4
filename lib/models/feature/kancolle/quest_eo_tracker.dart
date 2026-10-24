@@ -87,6 +87,9 @@ const _nationalityNames = {
   7: 'ロシア', 8: 'タイ', 9: 'ノルウェー', 10: 'スウェーデン', 11: 'オランダ', 12: 'オーストラリア',
 };
 
+/// 国籍の名前 (日本・アメリカ など)
+String eoNationalityName(int nationality) => _nationalityNames[nationality] ?? '?';
+
 /// 国籍 (ElectronicObserver EN の ShipDataExtensions.Nationality。図鑑の並び順で決まる)
 int eoShipNationality(QuestShip ship) => switch (ship.sortId) {
       < 1000 => 0,
