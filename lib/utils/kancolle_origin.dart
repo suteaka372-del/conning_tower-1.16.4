@@ -11,6 +11,12 @@ bool isKancolleGameHost(String host) {
   return h == 'kancolle-server.com' || h.endsWith('.kancolle-server.com') || _legacyServer.hasMatch(h);
 }
 
+/// DMM のページ (www.dmm.com / play.games.dmm.com / osapi.dmm.com など) か
+bool isDmmHost(String host) {
+  final h = host.toLowerCase();
+  return h == 'dmm.com' || h.endsWith('.dmm.com');
+}
+
 /// [sourceOrigin] (メッセージを送ったページの origin) から届いた [responseUrl] のデータを受け取ってよいか。
 /// 送り元がゲームサーバーで、データの URL も同じサーバーの kcsapi であること
 bool isTrustedKancolleMessage({required String? sourceOrigin, required String responseUrl}) {

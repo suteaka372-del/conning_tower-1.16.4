@@ -24,6 +24,7 @@ import 'package:conning_tower/routes/functional_layer.dart';
 import 'package:conning_tower/widgets/controls.dart';
 import 'package:conning_tower/widgets/dialog.dart';
 import 'package:conning_tower/widgets/indexed_stack.dart';
+import 'package:conning_tower/widgets/mini_game.dart';
 import 'package:conning_tower/widgets/modal_sheets.dart';
 import 'package:conning_tower/widgets/side_browser.dart';
 import 'package:conning_tower/widgets/side_resize_handle.dart';
@@ -339,6 +340,7 @@ class HomePageState extends ConsumerState<HomePage> {
     Size size = MediaQuery.of(context).size;
     bool useStack = size.width <= 1024;
     final settings = ref.watch(settingsProvider);
+    final miniGame = ref.watch(miniGameProvider);
 
     if (setUp) {
       setUp = false;
@@ -474,6 +476,13 @@ class HomePageState extends ConsumerState<HomePage> {
       // 横画面でダッシュボードを並べるときは、左右の安全領域 (カメラ部分) まで使って幅を確保する
       // (左メニューはカメラと重なってもよい)
       final sideBySide = orientation == Orientation.landscape && landscapeDashboard;
+      // 縦画面で漫画を読むときは、ゲームを右下の小窓にして上のブラウザを広げる
+      final miniPortrait = useMiniGame(
+        portrait: orientation == Orientation.portrait,
+        miniGame: miniGame,
+        browserShowing: sidePanel == SidePanel.browser,
+        dashboardInHome: settings.showDashboardInHome,
+      );
       final showRail = showControls && orientation == Orientation.landscape;
       return Scaffold(
           resizeToAvoidBottomInset: orientation == Orientation.portrait,
@@ -600,9 +609,15 @@ class HomePageState extends ConsumerState<HomePage> {
                         // If the aspect ratio of the parent element is less than or equal to the aspect ratio of the child element, the height is calculated by width
                         childHeight = childWidth / aspectRatio;
                       }
+                      if (miniPortrait) {
+                        final mini = miniGameSize(box.maxWidth);
+                        childWidth = mini.width;
+                        childHeight = mini.height;
+                      }
                       // 横並び: ゲーム画面 (5:3) | 境目 | ダッシュボード
                       double sideDashboardWidth = 0;
-                      double gameAreaWidth = childWidth;
+                      // 小窓のときも、ゲームの欄は横幅いっぱい (その中で右に寄せる)
+                      double gameAreaWidth = miniPortrait ? box.maxWidth : childWidth;
                       double gameAreaHeight = childHeight;
                       if (sideBySide) {
                         final layout = SideBySideLayout(
@@ -670,16 +685,14 @@ class HomePageState extends ConsumerState<HomePage> {
                                     key: const ValueKey("game"),
                                     padding: EdgeInsets.only(
                                         bottom: !sideBySide && enableBottomPadding ? bottomPaddingHeightValue : 0),
-                                    child: SizedBox(
-                                      height: gameAreaHeight,
-                                      width: gameAreaWidth,
-                                      child: Center(
-                                        child: SizedBox(
-                                          height: childHeight,
-                                          width: childWidth,
-                                          child: const AppWebView(),
-                                        ),
-                                      ),
+                                    // 小窓かどうかで変えるのは位置と大きさだけ (ゲーム画面を作り直さない)
+                                    child: GameBox(
+                                      areaWidth: gameAreaWidth,
+                                      areaHeight: gameAreaHeight,
+                                      gameSize: Size(childWidth, childHeight),
+                                      mini: miniPortrait,
+                                      onRestore: () => ref.read(miniGameProvider.notifier).state = false,
+                                      child: const AppWebView(),
                                     ),
                                   ),
                                   if (sideBySide)

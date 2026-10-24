@@ -2,13 +2,15 @@ import 'dart:developer';
 
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/widgets/mini_game.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 横並びモードの右側に出すブラウザ (DMMブックスの本棚など)。
 /// ゲームの WebView とは別物で、ゲーム用の設定やスクリプトは入れない。
-class SideBrowser extends StatefulWidget {
+class SideBrowser extends ConsumerStatefulWidget {
   const SideBrowser({super.key});
 
   static const String homeUrl = 'https://book.dmm.com/shelf/';
@@ -36,10 +38,10 @@ class SideBrowser extends StatefulWidget {
   }
 
   @override
-  State<SideBrowser> createState() => _SideBrowserState();
+  ConsumerState<SideBrowser> createState() => _SideBrowserState();
 }
 
-class _SideBrowserState extends State<SideBrowser> {
+class _SideBrowserState extends ConsumerState<SideBrowser> {
   InAppWebViewController? _controller;
   double _progress = 0;
   bool _canGoBack = false;
@@ -60,6 +62,9 @@ class _SideBrowserState extends State<SideBrowser> {
 
   @override
   Widget build(BuildContext context) {
+    // ゲームを小さくするボタンは縦画面だけ (横画面は境目のつまみで幅を変えられる)
+    final portrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final miniGame = ref.watch(miniGameProvider);
     return SideBrowserLayout(
       content: Stack(
         children: [
@@ -120,6 +125,8 @@ class _SideBrowserState extends State<SideBrowser> {
         onForward: _canGoForward ? () => _controller?.goForward() : null,
         onReload: () => _controller?.reload(),
         onShelf: () => _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(SideBrowser.homeUrl))),
+        miniGame: miniGame,
+        onMiniGame: portrait ? () => ref.read(miniGameProvider.notifier).state = !miniGame : null,
       ),
     );
   }
@@ -159,6 +166,8 @@ class SideBrowserBar extends StatelessWidget {
     required this.onForward,
     required this.onReload,
     required this.onShelf,
+    this.miniGame = false,
+    this.onMiniGame,
   });
 
   static const double width = 44;
@@ -167,6 +176,12 @@ class SideBrowserBar extends StatelessWidget {
   final VoidCallback? onForward;
   final VoidCallback? onReload;
   final VoidCallback? onShelf;
+
+  /// ゲームを小窓にしているか (ボタンの絵を切り替える)
+  final bool miniGame;
+
+  /// ゲームを小さく / 元に戻す。null ならボタンを出さない (横画面)
+  final VoidCallback? onMiniGame;
 
   @override
   Widget build(BuildContext context) {
@@ -185,6 +200,14 @@ class SideBrowserBar extends StatelessWidget {
             _BarButton(icon: CupertinoIcons.back, label: repairText('戻る', 'Back'), onPressed: onBack),
             _BarButton(icon: CupertinoIcons.forward, label: repairText('進む', 'Forward'), onPressed: onForward),
             const Spacer(),
+            if (onMiniGame != null)
+              _BarButton(
+                icon: miniGame ? CupertinoIcons.arrow_up_left_arrow_down_right : CupertinoIcons.arrow_down_right_arrow_up_left,
+                label: miniGame
+                    ? repairText('ゲームを元の大きさに戻す', 'Restore the game size')
+                    : repairText('ゲームを小さくする', 'Shrink the game'),
+                onPressed: onMiniGame,
+              ),
             _BarButton(icon: CupertinoIcons.refresh, label: repairText('再読み込み', 'Reload'), onPressed: onReload),
             _BarButton(icon: CupertinoIcons.book, label: repairText('本棚', 'Shelf'), onPressed: onShelf),
             SizedBox(height: bottomInset > 0 ? bottomInset : 4),

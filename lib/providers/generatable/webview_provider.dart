@@ -14,6 +14,7 @@ import 'package:conning_tower/providers/generatable/settings_provider.dart';
 import 'package:conning_tower/providers/raw_data_provider.dart';
 import 'package:conning_tower/providers/web_info_provider.dart';
 import 'package:conning_tower/utils/kancolle_origin.dart';
+import 'package:conning_tower/utils/poll.dart';
 import 'package:conning_tower/utils/toast.dart';
 import 'package:conning_tower/widgets/webview_tab.dart';
 import 'package:flutter/cupertino.dart';
@@ -102,6 +103,12 @@ class WebController extends _$WebController {
 
   bool autoAdjusted = false;
 
+  /// ページを読み込み始めるたびに増やす (前のページの「ゲームの枠待ち」を止めるため)
+  int _loadGeneration = 0;
+
+  /// 自動の全画面処理の途中か (二重に呼ばれて全画面が解除されないように)
+  bool _autoFitting = false;
+
   bool needScale = false;
 
   bool dmmCookieModified = false;
@@ -187,6 +194,7 @@ class WebController extends _$WebController {
 
   Future<void> onLoadStart(WebUri uri, {bool useHttpForKancolle = false}) async {
     newLoad = true;
+    _loadGeneration++;
     state.setCurrUrl(uri);
     state.clearCurrPageUrls();
     if (uri.rawValue.startsWith(kLocalHomeUrl)) {
@@ -257,6 +265,35 @@ class WebController extends _$WebController {
       );
     }
 
+    await autoFitWhenGameAppears(uri);
+  }
+
+  static const String _hasGameFrameJS =
+      "!!(document.getElementById('game_frame') || document.getElementById('htmlWrap') || document.getElementById('flashWrap'))";
+
+  /// ゲームの枠が現れたら自動で全画面にする (起動時・再読み込み・ログインし直し)。
+  /// DMM はゲームのページを play.games.dmm.com に転送するので、URL ではなくページの中身で判断する。
+  /// 枠はページの読み込みが終わってから作られることがあるので、少しの間待つ
+  Future<void> autoFitWhenGameAppears(WebUri uri) async {
+    if (!useIOSFit || !enableAutoProcess || autoAdjusted) return;
+    if (!isDmmHost(uri.host)) return;
+    final generation = _loadGeneration;
+    final found = await pollUntil(
+      () async => await controller.evaluateJavascript(source: _hasGameFrameJS) == true,
+      cancelled: () => generation != _loadGeneration || autoAdjusted,
+    );
+    if (found && generation == _loadGeneration) await autoFitGame();
+  }
+
+  /// 全画面にする (すでに全画面なら何もしない。adjustWindow と違って解除はしない)
+  Future<void> autoFitGame() async {
+    if (autoAdjusted || _autoFitting) return;
+    _autoFitting = true;
+    try {
+      await adjustWindow();
+    } finally {
+      _autoFitting = false;
+    }
   }
 
   Future<void> onProgressChanged(int progress) async {
@@ -273,7 +310,9 @@ class WebController extends _$WebController {
         inKancolleWindow = true;
         Toast.showSuccess(title: S.current.KCViewFuncMsgNaviGameLoadCompleted);
         HapticFeedback.mediumImpact();
-        if(enableAutoProcess) await adjustWindow();
+        // iOS はゲームの枠が現れるのを待ってから全画面にする (autoFitWhenGameAppears)。
+        // ここで先に呼ぶと、枠がまだ無いのに全画面にした扱いになり、そのあと全画面にならない
+        if (enableAutoProcess && !useIOSFit) await autoFitGame();
       }
     }
   }
