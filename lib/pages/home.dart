@@ -692,6 +692,8 @@ class HomePageState extends ConsumerState<HomePage> {
                                       gameSize: Size(childWidth, childHeight),
                                       mini: miniPortrait,
                                       onRestore: () => ref.read(miniGameProvider.notifier).state = false,
+                                      // 小窓のときは右のボタン列の代わりに、小窓の左にブラウザのボタンを並べる
+                                      leading: const SideBrowserRow(),
                                       child: const AppWebView(),
                                     ),
                                   ),

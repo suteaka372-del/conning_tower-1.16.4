@@ -8,6 +8,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// ブラウザのボタンの動き。小窓モードでは右のボタン列を消して、小窓の左に横一列で出すので、
+/// ブラウザの外 (ゲームの欄) からも押せるようにここで共有する
+class SideBrowserNav {
+  const SideBrowserNav({this.onBack, this.onForward, this.onReload, this.onShelf});
+
+  final VoidCallback? onBack;
+  final VoidCallback? onForward;
+  final VoidCallback? onReload;
+  final VoidCallback? onShelf;
+}
+
+final sideBrowserNavProvider = StateProvider<SideBrowserNav>((ref) => const SideBrowserNav());
+
 /// 横並びモードの右側に出すブラウザ (DMMブックスの本棚など)。
 /// ゲームの WebView とは別物で、ゲーム用の設定やスクリプトは入れない。
 class SideBrowser extends ConsumerStatefulWidget {
@@ -57,7 +70,19 @@ class _SideBrowserState extends ConsumerState<SideBrowser> {
         _canGoBack = back;
         _canGoForward = forward;
       });
+      _publishNav();
     }
+  }
+
+  SideBrowserNav get _nav => SideBrowserNav(
+        onBack: _canGoBack ? () => _controller?.goBack() : null,
+        onForward: _canGoForward ? () => _controller?.goForward() : null,
+        onReload: () => _controller?.reload(),
+        onShelf: () => _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(SideBrowser.homeUrl))),
+      );
+
+  void _publishNav() {
+    if (mounted) ref.read(sideBrowserNavProvider.notifier).state = _nav;
   }
 
   @override
@@ -65,7 +90,10 @@ class _SideBrowserState extends ConsumerState<SideBrowser> {
     // ゲームを小さくするボタンは縦画面だけ (横画面は境目のつまみで幅を変えられる)
     final portrait = MediaQuery.of(context).orientation == Orientation.portrait;
     final miniGame = ref.watch(miniGameProvider);
+    final nav = _nav;
     return SideBrowserLayout(
+      // 縦画面の小窓モードでは右のボタン列を消して、漫画を横幅いっぱいにする (ボタンは小窓の左)
+      showBar: !(portrait && miniGame),
       content: Stack(
         children: [
           InAppWebView(
@@ -80,7 +108,10 @@ class _SideBrowserState extends ConsumerState<SideBrowser> {
               isElementFullscreenEnabled: false,
               allowsBackForwardNavigationGestures: true,
             ),
-            onWebViewCreated: (controller) => _controller = controller,
+            onWebViewCreated: (controller) {
+              _controller = controller;
+              _publishNav();
+            },
             onProgressChanged: (controller, progress) {
               if (mounted) setState(() => _progress = progress / 100);
             },
@@ -121,10 +152,10 @@ class _SideBrowserState extends ConsumerState<SideBrowser> {
         ],
       ),
       bar: SideBrowserBar(
-        onBack: _canGoBack ? () => _controller?.goBack() : null,
-        onForward: _canGoForward ? () => _controller?.goForward() : null,
-        onReload: () => _controller?.reload(),
-        onShelf: () => _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(SideBrowser.homeUrl))),
+        onBack: nav.onBack,
+        onForward: nav.onForward,
+        onReload: nav.onReload,
+        onShelf: nav.onShelf,
         miniGame: miniGame,
         onMiniGame: portrait ? () => ref.read(miniGameProvider.notifier).state = !miniGame : null,
       ),
@@ -134,10 +165,13 @@ class _SideBrowserState extends ConsumerState<SideBrowser> {
 
 /// ページを縦いっぱいに表示し、ボタンは右側に縦に並べる (縦長の漫画1ページのため上下に枠を取らない)
 class SideBrowserLayout extends StatelessWidget {
-  const SideBrowserLayout({super.key, required this.content, required this.bar});
+  const SideBrowserLayout({super.key, required this.content, required this.bar, this.showBar = true});
 
   final Widget content;
   final Widget bar;
+
+  /// false なら右のボタン列を出さない。ページ ([content]) は最初の子のままなので作り直されない
+  final bool showBar;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +184,7 @@ class SideBrowserLayout extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(child: content),
-          bar,
+          if (showBar) bar,
         ],
       ),
     );
@@ -211,6 +245,37 @@ class SideBrowserBar extends StatelessWidget {
             _BarButton(icon: CupertinoIcons.refresh, label: repairText('再読み込み', 'Reload'), onPressed: onReload),
             _BarButton(icon: CupertinoIcons.book, label: repairText('本棚', 'Shelf'), onPressed: onShelf),
             SizedBox(height: bottomInset > 0 ? bottomInset : 4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 小窓モードで小窓の左の空き地に出す、ブラウザのボタンの横一列 (左寄せ)
+class SideBrowserRow extends ConsumerWidget {
+  const SideBrowserRow({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nav = ref.watch(sideBrowserNavProvider);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _BarButton(icon: CupertinoIcons.back, label: repairText('戻る', 'Back'), onPressed: nav.onBack),
+            _BarButton(icon: CupertinoIcons.forward, label: repairText('進む', 'Forward'), onPressed: nav.onForward),
+            _BarButton(icon: CupertinoIcons.refresh, label: repairText('再読み込み', 'Reload'), onPressed: nav.onReload),
+            _BarButton(icon: CupertinoIcons.book, label: repairText('本棚', 'Shelf'), onPressed: nav.onShelf),
+            _BarButton(
+              icon: CupertinoIcons.arrow_up_left_arrow_down_right,
+              label: repairText('ゲームを元の大きさに戻す', 'Restore the game size'),
+              onPressed: () => ref.read(miniGameProvider.notifier).state = false,
+            ),
           ],
         ),
       ),

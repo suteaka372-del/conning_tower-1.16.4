@@ -34,6 +34,7 @@ class GameBox extends StatelessWidget {
     required this.mini,
     required this.onRestore,
     required this.child,
+    this.leading,
   });
 
   final double areaWidth;
@@ -43,24 +44,33 @@ class GameBox extends StatelessWidget {
   final VoidCallback onRestore;
   final Widget child;
 
+  /// 小窓のとき、小窓の左の空き地に出すもの (ブラウザのボタン)
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: areaHeight,
       width: areaWidth,
-      child: Align(
-        alignment: mini ? Alignment.bottomRight : Alignment.center,
-        child: SizedBox(
-          height: gameSize.height,
-          width: gameSize.width,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              child,
-              if (mini) MiniGameOverlay(onRestore: onRestore),
-            ],
+      child: Stack(
+        children: [
+          Align(
+            alignment: mini ? Alignment.bottomRight : Alignment.center,
+            child: SizedBox(
+              height: gameSize.height,
+              width: gameSize.width,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  child,
+                  if (mini) MiniGameOverlay(onRestore: onRestore),
+                ],
+              ),
+            ),
           ),
-        ),
+          // ゲーム ([child]) より後ろに足すので、出し入れしてもゲームは作り直されない
+          if (mini && leading != null) Positioned(left: 0, top: 0, bottom: 0, right: gameSize.width, child: leading!),
+        ],
       ),
     );
   }
