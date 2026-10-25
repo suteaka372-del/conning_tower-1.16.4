@@ -195,7 +195,7 @@ void main() {
     expect(reloaded.entries.first.mismatch, isTrue);
 
     // 対応していない海域は記録しない
-    recorder.onMapPoint(mapId: 71, cell: 1, start: true, fleet: () => dd4);
+    recorder.onMapPoint(mapId: 611, cell: 1, start: true, fleet: () => dd4); // イベント海域 (61-1)
     expect(recorder.entries.length, 2);
   });
 

@@ -90,6 +90,18 @@ void main() {
     expect(find.text('2-5 沖ノ島沖'), findsOneWidget);
     expect(find.text('索敵スコア (分岐点係数1)'), findsOneWidget);
     expect(localStorage.getInt('compass_map'), 25);
+
+    // ゲージが3つある 7-5 はゲージを選べる
+    await tester.tap(find.text('7-x'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('7-5'));
+    await tester.pumpAndSettle();
+    expect(find.text('7-5 ジャワ島沖'), findsOneWidget);
+    expect(find.text('ボス (Kマス) に着く確率'), findsOneWidget);
+    await tester.tap(find.text('第3ゲージ T'));
+    await tester.pumpAndSettle();
+    expect(find.text('ボス (Tマス) に着く確率'), findsOneWidget);
+    expect(localStorage.getInt('compass_phase'), 2);
     expect(tester.takeException(), isNull);
   });
 }

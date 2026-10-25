@@ -4,11 +4,12 @@ import 'compass_engine.dart';
 import 'compass_maps_w12.dart';
 import 'compass_maps_w34.dart';
 import 'compass_maps_w5.dart';
+import 'compass_maps_w67.dart';
 
 export 'compass_engine.dart';
 
 /// 羅針盤シミュレーターで使える海域 (ゲージが複数ある海域は、ゲージごとに並ぶ)
-final List<CompassMap> kCompassMaps = [...kCompassMapsWorld12, ...kCompassMapsWorld34, ...kCompassMapsWorld5];
+final List<CompassMap> kCompassMaps = [...kCompassMapsWorld12, ...kCompassMapsWorld34, ...kCompassMapsWorld5, ...kCompassMapsWorld67];
 
 /// 海域番号 (11 = 1-1) から (ゲージが複数ある海域は最初のゲージ)
 CompassMap? compassMapOf(int mapId) {
