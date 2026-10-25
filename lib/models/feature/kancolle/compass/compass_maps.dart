@@ -3,11 +3,12 @@ import 'package:conning_tower/models/feature/kancolle/squad.dart';
 import 'compass_engine.dart';
 import 'compass_maps_w12.dart';
 import 'compass_maps_w34.dart';
+import 'compass_maps_w5.dart';
 
 export 'compass_engine.dart';
 
 /// 羅針盤シミュレーターで使える海域 (ゲージが複数ある海域は、ゲージごとに並ぶ)
-final List<CompassMap> kCompassMaps = [...kCompassMapsWorld12, ...kCompassMapsWorld34];
+final List<CompassMap> kCompassMaps = [...kCompassMapsWorld12, ...kCompassMapsWorld34, ...kCompassMapsWorld5];
 
 /// 海域番号 (11 = 1-1) から (ゲージが複数ある海域は最初のゲージ)
 CompassMap? compassMapOf(int mapId) {
