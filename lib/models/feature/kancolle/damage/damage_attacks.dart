@@ -4,8 +4,10 @@
 import 'dart:math';
 
 import 'damage_engine.dart';
+import 'damage_ground.dart';
 
 export 'damage_engine.dart';
+export 'damage_ground.dart';
 
 // 装備の種類 (api_type[2])
 const kDmgSmallGun = 1, kDmgMediumGun = 2, kDmgLargeGun = 3, kDmgSecondary = 4, kDmgTorpedo = 5;
@@ -462,21 +464,28 @@ List<DamageAttack> damageDayAttacks(DamageShip a, DamageShip t, DamageConditions
   final state = a.state;
   final apMod = t.apShellTarget ? damageApShellModifier(a) : 1.0;
   final bonus = a.enemy ? 1.0 : c.bonus;
+  final ground = damageGroundBonus(a, t, day: true);
 
-  // 砲撃
+  // 砲撃 (潜水艦は特型内火艇があれば陸上型だけを撃てる)
   final carrierStyle = a.carrier || (a.enemy && a.equips.any((e) => e.isAttackPlane));
-  final canShell = !a.submarine &&
+  final amphibiousSub = a.submarine && t.installation && a.equips.any((e) => e.category == kDmgSpecialAmphibious);
+  final canShell = (!a.submarine || amphibiousSub) &&
       (!carrierStyle ||
           (a.equips.any((e) => e.isAttackPlane) &&
+              (!t.installation || damageCarrierCanHitInstallation(a)) &&
               (a.shipType == kDmgCVB ? state.index < DamageState.heavy.index : state.index < DamageState.medium.index)));
   if (canShell && state != DamageState.sunk) {
     final improvement = a.equips.fold(0.0, (s, e) => s + e.shellingImprovement);
     final double base;
-    if (carrierStyle) {
+    if (carrierStyle && t.installation) {
+      // 陸上型には雷装を数えず、爆装は対地艦爆・艦攻・艦偵のものだけ
+      final bombing = damageCarrierGroundBombing(a);
+      base = ((ground.apply(a.firepower + improvement + 5) + (bombing * 1.3).floor() + 15) * 1.5).floorToDouble() + 25;
+    } else if (carrierStyle) {
       final bombing = a.equips.fold(0, (s, e) => s + e.bombing);
       base = ((a.firepower + improvement + a.torpedo + (bombing * 1.3).floor()) * 1.5).floorToDouble() + 55;
     } else {
-      base = a.firepower + improvement + 5;
+      base = t.installation ? ground.apply(a.firepower + improvement + 5) : a.firepower + improvement + 5;
     }
     final pre = base *
             c.engagement.modifier *
@@ -486,8 +495,8 @@ List<DamageAttack> damageDayAttacks(DamageShip a, DamageShip t, DamageConditions
     final capped = damageSoftCap(pre, DamagePhase.shelling.cap);
     final proficiency = carrierStyle ? damageProficiencyCritical(a.equips) : 1.0;
     DamageAttack shell(DamageAttackKind kind, String ja, String en, double special, int hits, double prof) {
-      final (normal, critical) =
-          damagePostCap(capped, special: special, apShell: apMod, apTarget: t.apShellTarget, bonus: bonus, proficiency: prof);
+      final (normal, critical) = damagePostCap(capped,
+          special: special, apShell: apMod, apTarget: t.apShellTarget, depot: ground.depot, bonus: bonus, proficiency: prof);
       return DamageAttack(
         kind: kind,
         ja: ja,
@@ -499,7 +508,7 @@ List<DamageAttack> damageDayAttacks(DamageShip a, DamageShip t, DamageConditions
     }
 
     attacks.add(shell(carrierStyle ? DamageAttackKind.carrier : DamageAttackKind.shelling, '砲撃', 'Shelling', 1, 1, proficiency));
-    if (state.index < DamageState.heavy.index) {
+    if (state.index < DamageState.heavy.index && !a.submarine) {
       for (final (kind, ja, en, special, hits) in damageDaySpecials(a)) {
         if (kind == DamageAttackKind.carrierCutIn && t.installation) continue;
         final prof = kind == DamageAttackKind.carrierCutIn ? _carrierCutInProficiency(a) : 1.0;
@@ -535,11 +544,11 @@ List<DamageAttack> damageDayAttacks(DamageShip a, DamageShip t, DamageConditions
     }
   }
 
-  // 開幕航空攻撃 (スロットごと。艦攻は 0.8倍/1.5倍 が半々)
+  // 開幕航空攻撃 (スロットごと。艦攻は 0.8倍/1.5倍 が半々)。
+  // 陸上型にはどの機体も攻撃できるが、艦攻の雷装は0扱い。航空攻撃の対地補正・集積地補正は分かっていないので付けない
   for (final e in a.equips) {
     if (!const {kDmgDiveBomber, kDmgTorpedoBomber, kDmgSeaplaneBomber, kDmgJetFighterBomber}.contains(e.category) || e.count <= 0) continue;
-    if (t.installation && e.category == kDmgTorpedoBomber) continue;
-    final power = e.category == kDmgTorpedoBomber ? e.torpedo : e.bombing;
+    final power = e.category == kDmgTorpedoBomber ? (t.installation ? 0 : e.torpedo) : e.bombing;
     if (power <= 0 && e.category != kDmgTorpedoBomber) continue;
     final improvement = (e.category == kDmgTorpedoBomber || (e.category == kDmgDiveBomber && !e.isFighterBomber) || e.category == kDmgSeaplaneBomber)
         ? 0.2 * e.improvement
@@ -621,14 +630,17 @@ bool damageCanNightAir(DamageShip a) =>
     a.equips.any((e) => _isNightFighter(e) || _isNightAttacker(e));
 
 /// 夜戦の特殊攻撃の候補: (名前, 倍率, 1発ごとの倍率の並び。2回攻撃は2つ、1〜2回のものは null)
-List<(String, String, double, int, bool)> damageNightSpecials(DamageShip a) {
+/// [vsInstallation] は陸上型を狙うとき (魚雷はないものとして判定。駆逐艦専用カットインは主砲があれば判定される)
+List<(String, String, double, int, bool)> damageNightSpecials(DamageShip a, {bool vsInstallation = false}) {
   final specials = <(String, String, double, int, bool)>[];
   final main = a.countOf((e) => e.isMainGun);
   final secondary = a.countOf((e) => e.isSecondary);
-  final torpedo = a.countOf((e) => e.isTorpedo);
+  final allTorpedoes = a.countOf((e) => e.isTorpedo);
+  final torpedo = vsInstallation ? 0 : allTorpedoes;
   final surfaceRadar = a.countOf((e) => e.isRadar && e.los >= 5);
   // 駆逐艦専用カットイン (1回か2回当たる)。通常のカットインと両方判定される
-  if (a.shipType == kDmgDD) {
+  if (a.shipType == kDmgDD && (!vsInstallation || main >= 1)) {
+    final torpedo = allTorpedoes;
     final d2 = a.countOf((e) => e.itemId == kDmgDGunKai2);
     final d3 = a.countOf((e) => e.itemId == kDmgDGunKai3);
     final dGun = (d2 + d3 >= 2 ? 1.4 : (d2 + d3 == 1 ? 1.25 : 1.0)) * (d3 >= 2 ? 1.1 : (d3 == 1 ? 1.05 : 1.0));
@@ -646,7 +658,7 @@ List<(String, String, double, int, bool)> damageNightSpecials(DamageShip a) {
     specials.add(('夜間瑞雲', 'Night Zuiun', mod, 2, false));
   }
   // 通常のカットインは倍率の一番高いものだけ判定される (潜水艦は後期型魚雷のカットイン)
-  final lateTorpedo = a.countOf((e) => kDmgLateSubTorpedoes.contains(e.itemId));
+  final lateTorpedo = vsInstallation ? 0 : a.countOf((e) => kDmgLateSubTorpedoes.contains(e.itemId));
   final subRadar = a.countOf((e) => e.category == kDmgSubRadar);
   final generic = <(String, String, double, int, bool)>[
     if (main >= 3) ('主主主', 'MMM', 2.0, 1, false),
@@ -686,10 +698,13 @@ List<DamageAttack> damageNightAttacks(DamageShip a, DamageShip t, DamageConditio
   if (a.pt || t.pt || t.submarine || state.index >= DamageState.heavy.index) return attacks;
   final bonus = a.enemy ? 1.0 : c.bonus;
   final stateMod = damageStateModifier(state, DamagePhase.night);
+  final ground = damageGroundBonus(a, t, day: false);
 
-  DamageAttack attack(DamageAttackKind kind, String ja, String en, double base, double special, int hits, {double prof = 1, double fit = 0}) {
+  DamageAttack attack(DamageAttackKind kind, String ja, String en, double base, double special, int hits,
+      {double prof = 1, double fit = 0, double depot = 1}) {
     final pre = base * special * stateMod + fit;
-    final (normal, critical) = damagePostCap(damageSoftCap(pre, DamagePhase.night.cap), apTarget: false, bonus: bonus, proficiency: prof);
+    final (normal, critical) =
+        damagePostCap(damageSoftCap(pre, DamagePhase.night.cap), apTarget: false, depot: depot, bonus: bonus, proficiency: prof);
     return DamageAttack(
       kind: kind,
       ja: '夜戦 $ja',
@@ -726,17 +741,19 @@ List<DamageAttack> damageNightAttacks(DamageShip a, DamageShip t, DamageConditio
     if (!(a.enemy ? a.nightCarrier : _carrierNightGunfire(a))) return attacks;
   }
 
-  // 火力 + 雷装 (陸上型への攻撃では雷装を数えない (3回目で対地補正と合わせて扱う))
+  // 火力 + 雷装。陸上型には雷装を数えず (火力 + 改修 + 5 + 触接) に対地補正 (装備がなければ 火力 + 雷装 + 触接)
   final improvement = a.equips.fold(0.0, (s, e) => s + e.nightImprovement);
-  final torpedo = t.installation && a.equips.isNotEmpty ? 0 : a.torpedo;
-  final base = (a.firepower + torpedo + improvement + c.nightContact).toDouble();
+  final base = t.installation && a.equips.isNotEmpty
+      ? ground.apply(a.firepower + improvement + 5 + c.nightContact)
+      : (a.firepower + a.torpedo + improvement + c.nightContact).toDouble();
   final fit = damageFitGunBonus(a);
-  attacks.add(attack(DamageAttackKind.night, '通常', 'normal', base, 1, 1, fit: fit));
+  final depot = ground.depot;
+  attacks.add(attack(DamageAttackKind.night, '通常', 'normal', base, 1, 1, fit: fit, depot: depot));
   if (!a.carrier) {
-    for (final (ja, en, mod, hits, oneOrTwo) in damageNightSpecials(a)) {
+    for (final (ja, en, mod, hits, oneOrTwo) in damageNightSpecials(a, vsInstallation: t.installation)) {
       if (oneOrTwo) {
         // 駆逐艦専用カットインは1回か2回 (割合は分からないので半々とする)
-        final once = attack(DamageAttackKind.nightCutIn, '', '', base, mod, 1, fit: fit);
+        final once = attack(DamageAttackKind.nightCutIn, '', '', base, mod, 1, fit: fit, depot: depot);
         attacks.add(DamageAttack(
           kind: DamageAttackKind.nightCutIn,
           ja: '夜戦 $ja ×${mod.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '')} (1〜2回。半々と仮定)',
@@ -760,6 +777,7 @@ List<DamageAttack> damageNightAttacks(DamageShip a, DamageShip t, DamageConditio
           mod,
           hits,
           fit: fit,
+          depot: depot,
         ));
       }
     }

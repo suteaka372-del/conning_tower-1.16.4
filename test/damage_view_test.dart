@@ -79,28 +79,21 @@ void main() {
     expect(full.equips.first.shellingImprovement, closeTo(1.5 * 2, 1e-9)); // 大口径 1.5√4
   });
 
-  testWidgets('damage view: target, summary and attacks of each ship', (tester) async {
+  Future<void> pumpView(WidgetTester tester, AbyssalTable abyssalTable, Ship ship) async {
     SharedPreferences.setMockInitialValues({'dmg_map': 25});
     localStorage = await SharedPreferences.getInstance();
     tester.view.physicalSize = const Size(402, 4000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    AirDataLoader.abyssal = table;
+    AirDataLoader.abyssal = abyssalTable;
     AirDataLoader.abyssalAt = DateTime.now();
     AirDataLoader.comps['2-5'] = parseEnemyComps(kcnavSample);
     AirDataLoader.compsAt['2-5'] = DateTime.now();
-
-    final gun = Equipment(id: 1, itemId: 7, name: '35.6cm連装砲', type: const [1, 3, 3, 3, 0], firepower: 15);
-    final bb = Ship(
-      uid: 1, shipId: 151, name: '榛名改二', level: 99, nowHP: 82, maxHP: 82, shipType: 8, //
-      attack: const [130, 130], attackT: const [0, 0], armor: const [80, 80], antiSubmarine: const [0, 0],
-      onSlot: const [3, 3, 3, 3], equipment: [gun, gun],
-    );
     await tester.pumpWidget(ProviderScope(
       overrides: [
         kancolleDataProvider.overrideWith((ref) => KancolleData(
               queue: OperationQueue(map: {}),
-              squads: [Squad(id: 1, name: '第1艦隊', ships: [bb])],
+              squads: [Squad(id: 1, name: '第1艦隊', ships: [ship])],
               seaForceBase: SeaForceBase(
                 resource: const SeaForceBaseResource(
                     fuel: 0,
@@ -122,8 +115,19 @@ void main() {
       child: const CupertinoApp(home: CupertinoPageScaffold(child: DamageView())),
     ));
     await tester.pump();
+  }
+
+  testWidgets('damage view: target, summary and attacks of each ship', (tester) async {
+    final gun = Equipment(id: 1, itemId: 7, name: '35.6cm連装砲', type: const [1, 3, 3, 3, 0], firepower: 15);
+    final bb = Ship(
+      uid: 1, shipId: 151, name: '榛名改二', level: 99, nowHP: 82, maxHP: 82, shipType: 8, //
+      attack: const [130, 130], attackT: const [0, 0], armor: const [80, 80], antiSubmarine: const [0, 0],
+      onSlot: const [3, 3, 3, 3], equipment: [gun, gun],
+    );
+    await pumpView(tester, table, bb);
 
     expect(find.text('ダメージシミュレーター'), findsOneWidget);
+    expect(find.text('陸上型への補正 (対地装備)'), findsNothing);
     expect(find.text('1 空母ヲ級flagship (96)'), findsOneWidget);
     expect(find.text('1回の攻撃で撃沈・大破できるか (通常の命中)'), findsOneWidget);
     // 砲撃 135 (徹甲弾なし) vs 装甲80: 防御 56〜103.4 → 31〜79
@@ -166,6 +170,31 @@ void main() {
     expect(find.textContaining('→ 撃沈'), findsNothing);
     expect(find.textContaining('撃沈 最大'), findsNothing);
     expect(localStorage.getBool('dmg_reverse'), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('damage view: installation target shows the ground bonus', (tester) async {
+    // 駆逐イ級を陸上型 (ソフトスキン) にしたデータ
+    final ground = parseAbyssalTable(jsonEncode({
+      'ships': {
+        '1528': [50, [32, 32, 32], 96, 25, 0, 80, 0, 0, 4],
+        '1502': [7, [0], 160, 5, 0, 40, 0, 1, 0],
+      },
+    }));
+    final gun = Equipment(id: 1, itemId: 7, name: '35.6cm連装砲', type: const [1, 3, 3, 3, 0], firepower: 15);
+    final wg = Equipment(id: 2, itemId: 126, name: 'WG42 (Wurfgerät 42)', type: const [15, 26, 37, 31, 0], firepower: 1);
+    final bb = Ship(
+      uid: 1, shipId: 151, name: '榛名改二', level: 99, nowHP: 82, maxHP: 82, shipType: 8, //
+      attack: const [131, 131], attackT: const [0, 0], armor: const [80, 80], antiSubmarine: const [0, 0],
+      onSlot: const [3, 3, 3, 3], equipment: [gun, wg],
+    );
+    await pumpView(tester, ground, bb);
+    expect(find.text('2 駆逐イ級 (160・陸上)'), findsOneWidget);
+    await tester.tap(find.text('2 駆逐イ級 (160・陸上)'));
+    await tester.pumpAndSettle();
+    expect(find.text('陸上型への補正 (対地装備)'), findsOneWidget);
+    expect(find.text('昼 ×1.3 +75\n夜 ×1.3 +75'), findsOneWidget);
+    expect(find.textContaining('陸上型には雷撃できません'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

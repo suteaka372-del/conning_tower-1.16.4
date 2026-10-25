@@ -27,6 +27,17 @@ String damageOutcomeText(DamageOutcome o) {
   return '$range$hits → ${odds.isEmpty ? repairText('中破未満', 'below moderate') : odds.join('・')}';
 }
 
+String _number(double v) => v.toStringAsFixed(3).replaceFirst(RegExp(r'\.?0+$'), '');
+
+/// 対地補正の1行 (×2.31 +25・集積地 ×2.125)
+String damageGroundText(DamageGroundBonus b) {
+  final parts = [
+    if (b.multiplier != 1 || b.add != 0) '×${_number(b.multiplier)}${b.add != 0 ? ' +${_number(b.add)}' : ''}',
+    if (b.depot != 1) repairText('集積地 ×${_number(b.depot)}', 'depot ×${_number(b.depot)}'),
+  ];
+  return parts.isEmpty ? repairText('なし', 'none') : parts.join(repairText('・', ', '));
+}
+
 /// ダメージシミュレーター: 海域から敵編成を1つ選び、自分の艦隊の攻撃が当たったときにどうなるかを並べる
 class DamageView extends ConsumerStatefulWidget {
   const DamageView({super.key});
@@ -335,7 +346,7 @@ class _DamageViewState extends ConsumerState<DamageView> {
           if (!_reverse) {
             final target = _target.clamp(0, enemies.length - 1);
             children
-              ..add(_targetPicker([for (final e in enemies) '${e.name} (${e.hp})'], target))
+              ..add(_targetPicker([for (final e in enemies) '${e.name} (${e.hp}${e.installation ? repairText('・陸上', ', land') : ''})'], target))
               ..add(_summarySection(own, enemies, conditions, secondary))
               ..addAll([for (final ship in own) _shipSection(ship, enemies[target], conditions, secondary)]);
           } else if (own.isNotEmpty) {
@@ -514,9 +525,23 @@ class _DamageViewState extends ConsumerState<DamageView> {
   /// 1隻の攻撃と、狙う艦に当たったときの結果
   Widget _shipSection(DamageShip ship, DamageShip target, DamageConditions c, TextStyle secondary, {bool stopper = false}) {
     final attacks = damageAllAttacks(ship, target, c);
+    final ground = !ship.enemy && (target.installation || target.supplyDepot);
     return QuestDetailSection(
       title: repairText('${ship.name} → ${target.name}', '${ship.name} → ${target.name}'),
+      footer: ground && target.installation
+          ? repairText('陸上型には雷撃できません。艦攻の航空攻撃は雷装0扱い。航空攻撃・夜間航空攻撃の対地補正は分かっていないので付けていません',
+              'No torpedoes against installations. Installation bonuses for air attacks are unknown and not applied')
+          : null,
       children: [
+        if (ground)
+          CupertinoListTile(
+            title: Text(repairText('陸上型への補正 (対地装備)', 'Installation bonus'), style: const TextStyle(fontSize: 14)),
+            subtitle: Text(
+              '${repairText('昼', 'Day')} ${damageGroundText(damageGroundBonus(ship, target, day: true))}\n'
+              '${repairText('夜', 'Night')} ${damageGroundText(damageGroundBonus(ship, target, day: false))}',
+              maxLines: 2,
+            ),
+          ),
         if (target.pt || ship.pt)
           CupertinoListTile(title: Text(repairText('PT小鬼群はダメージの式が特殊なため計算しません', 'PT Imps are not supported'), style: secondary)),
         if (attacks.isEmpty && !target.pt && !ship.pt)

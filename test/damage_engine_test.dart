@@ -159,8 +159,9 @@ void main() {
     // キャップのあとで端数を切り捨てる: [64.12] = 64、[120.23] = 120
     expect(strike.normal.map((v) => v.$2.single), [(base * 0.8).floorToDouble(), (base * 1.5).floorToDouble()]);
     expect(strike.normal.map((v) => v.$1), [0.5, 0.5]);
-    // 艦攻は陸上型を攻撃しない
-    expect(damageDayAttacks(cv, airfield, const DamageConditions()).where((a) => a.kind == DamageAttackKind.airstrike), isEmpty);
+    // 艦攻も陸上型を攻撃するが雷装は0扱い: 25 → 20 / [37.5]
+    final ground = attackOf(damageDayAttacks(cv, airfield, const DamageConditions()), DamageAttackKind.airstrike);
+    expect(ground.normal.map((v) => v.$2.single), [20, 37]);
   });
 
   test('light cruiser fit guns and event bonus', () {
