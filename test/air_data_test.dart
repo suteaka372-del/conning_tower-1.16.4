@@ -109,6 +109,28 @@ void main() {
     expect(ship.fleetAaBonus, (0.2 * 10 + 0.2 * 10 + 0.2 * 9).floor());
   });
 
+  test('trying other planes: swapped slots fly full, removed slots are empty', () {
+    final fighter = Equipment(id: 1, itemId: 22, name: '烈風', type: const [3, 5, 6, 6, 1], aa: 10, proficiency: 7);
+    final bomber = Equipment(id: 2, itemId: 23, name: '彗星', type: const [3, 7, 7, 7, 2], aa: 0, proficiency: 7);
+    final strong = Equipment(id: 3, itemId: 336, name: '烈風改二', type: const [3, 5, 6, 6, 1], aa: 13, proficiency: 7);
+    final cv = Ship(
+      uid: 7, shipId: 277, name: '赤城改', level: 99, nowHP: 69, maxHP: 69, shipType: 11, //
+      onSlot: const [5, 20, 32, 10], antiAircraft: const [60, 89], equipment: [fighter, fighter, fighter, bomber],
+    );
+    final normal = airShipOf(cv);
+    expect(normal.slots.map((s) => s.count), [5, 20, 32, 10]);
+    final tried = airShipOf(cv, overrides: {0: strong, 3: null}, maxSlots: const [20, 20, 32, 10]);
+    expect(tried.slots.map((s) => (s.index, s.plane.name, s.count)), [(0, '烈風改二', 20), (1, '烈風', 20), (2, '烈風', 32)]);
+    // 素の対空は元の装備から求める (60 - 30 = 30)。加重は 2 × [30 / 2] = 30 のまま
+    expect(tried.weightedAa, normal.weightedAa);
+    final fleet = ownAirFleet(Squad(id: 1, name: '', ships: [cv]), overrides: {7: {3: strong}});
+    expect(fleet.ships.single.slots.last.plane.name, '烈風改二');
+
+    // 候補: 同じ装備はまとめて、制空値の高い順
+    final candidates = airSwapCandidates([fighter, fighter.copyWith(id: 9), bomber, strong, Equipment(id: 4, itemId: 2, type: const [1, 1, 1, 1, 0])]);
+    expect(candidates.map((c) => (c.$1.name, c.$2)), [('烈風改二', 1), ('烈風', 2), ('彗星', 1)]);
+  });
+
   test('KCNav url: every node number of the map, and the gauge for maps with gauges', () {
     final since = DateTime.utc(2026, 4, 28);
     final url = kcnavEnemyCompsUrl(compassMapOf(15)!, since: since);

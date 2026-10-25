@@ -29,7 +29,7 @@ void main() {
   testWidgets('air view: nodes, patterns, air state and losses', (tester) async {
     SharedPreferences.setMockInitialValues({'air_map': 25});
     localStorage = await SharedPreferences.getInstance();
-    tester.view.physicalSize = const Size(402, 3000);
+    tester.view.physicalSize = const Size(402, 6000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -42,6 +42,8 @@ void main() {
     final shipInfo = {
       1528: abyssal(1528, '空母ヲ級', 'flagship', 11),
       1502: abyssal(1502, '駆逐イ級', '-', 2),
+      277: GetDataApiDataApiMstShipEntity(
+          apiId: 277, apiSortId: 0, apiName: '赤城改', apiYomi: 'あかぎ', apiStype: 11, apiCtype: 14, apiMaxeq: [18, 18, 27, 10]),
     };
     AirDataLoader.abyssal = parseAbyssalTable(jsonEncode({
       'updated': '2026-10-25',
@@ -51,7 +53,10 @@ void main() {
       },
     }));
     AirDataLoader.abyssalAt = DateTime.now();
-    AirDataLoader.comps['2-5'] = parseEnemyComps(kcnavSample);
+    AirDataLoader.comps['2-5'] = [
+      ...parseEnemyComps(kcnavSample),
+      const EnemyComp(node: 'E', count: 50, formation: 1, ships: [EnemyShipEntry(1528, [1520, 1517, 1524, -1, -1])]),
+    ];
     AirDataLoader.compsAt['2-5'] = DateTime.now();
 
     final fighter = Equipment(id: 1, itemId: 22, name: '烈風', type: const [3, 5, 6, 6, 1], aa: 10, proficiency: 7);
@@ -78,7 +83,7 @@ void main() {
                     improvementMaterials: 0),
                 admiral: const Admiral(name: '', level: 120, rank: 10, maxShip: 0, maxItem: 0),
               ),
-              fleet: Fleet(ships: [], equipment: {}),
+              fleet: Fleet(ships: [], equipment: {1: fighter, 2: bomber}),
               ref: ref,
               dataInfo: DataInfo(
                 slotItemInfo: slotItems,
@@ -112,6 +117,32 @@ void main() {
     await tester.tap(find.text('G'));
     await tester.pumpAndSettle();
     expect(find.text('Gマスの敵編成 (1パターン)'), findsOneWidget);
+
+    // ルート (連戦): 羅針盤で一番通りやすい道のり C→E→G→K のうち、報告のある E と G
+    await tester.tap(find.text('ルート (連戦)'));
+    await tester.pumpAndSettle();
+    expect(find.text('ルート C→E→G→K'), findsOneWidget);
+    expect(find.textContaining('1戦目 Eマス'), findsOneWidget);
+    expect(find.textContaining('2戦目 Gマス'), findsOneWidget);
+    expect(find.text('制空権 (Gマス (2戦目))'), findsOneWidget);
+    await tester.tap(find.textContaining('1戦目 Eマス'));
+    await tester.pumpAndSettle();
+    expect(find.text('Eマスの敵編成 (1パターン)'), findsOneWidget);
+
+    // 装備を試す: 4スロット目の彗星を外す
+    expect(find.textContaining('彗星: 10'), findsOneWidget);
+    await tester.tap(find.text('艦載機を入れ替えて計算する'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('赤城改 4'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('外す'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 か所を試しています'), findsOneWidget);
+    expect(find.textContaining('(なし)・試し中 (10機)'), findsOneWidget);
+    expect(find.textContaining('彗星: 10'), findsNothing);
+    await tester.tap(find.text('元に戻す'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('彗星: 10'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

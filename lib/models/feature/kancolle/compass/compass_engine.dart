@@ -323,6 +323,23 @@ class CompassResult {
 
   /// 通る分岐点に、割合を仮に決めたものがある
   bool get estimated => steps.any((s) => s.reach > 0 && s.outcome.estimated);
+
+  /// いちばん通りやすい道のり (出撃地点から、各マスで一番確率の高い行き先をたどる。出撃地点は含まない)
+  List<String> get likelyRoute {
+    final outcomes = {for (final s in steps) s.node: s.outcome};
+    final route = <String>[];
+    var node = 'Start';
+    while (route.length < 40) {
+      final outcome = outcomes[node];
+      if (outcome == null || outcome.options.isEmpty) break;
+      final next = outcome.options.reduce((a, b) => b.probability > a.probability ? b : a).node;
+      if (route.contains(next) || next == node) break;
+      if (!next.startsWith('Start')) route.add(next);
+      node = next;
+      if (node == map.boss) break;
+    }
+    return route;
+  }
 }
 
 /// [fleet] で [map] に出撃したときに、各マスに来る確率

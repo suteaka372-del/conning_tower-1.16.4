@@ -1,7 +1,9 @@
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/air/air_data.dart';
 import 'package:conning_tower/models/feature/kancolle/compass/compass_maps.dart';
+import 'package:conning_tower/models/feature/kancolle/equipment.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/providers/air_data_provider.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
@@ -26,6 +28,15 @@ String airStatesText(Map<AirState, double> states) {
   return entries.map((e) => '${airStateLabel(e.key).replaceAll('制空権', '').replaceAll('航空', '')} ${airPercent(e.value)}').join(' / ');
 }
 
+/// 熟練度の記号
+const kAirProficiencyMarks = ['', '|', '||', '|||', '/', '//', '///', '>>'];
+
+String airEquipmentLabel(Equipment e) {
+  final level = e.level ?? 0;
+  final prof = (e.proficiency ?? 0).clamp(0, 7);
+  return [e.name ?? '', if (level > 0) '★$level', if (prof > 0) kAirProficiencyMarks[prof]].join(' ');
+}
+
 /// 制空権シミュレーター: 自分の艦隊と、各マスの敵編成 (KCNav の報告) を戦わせて、制空状態と撃墜を数える
 class AirView extends ConsumerStatefulWidget {
   const AirView({super.key});
@@ -39,6 +50,7 @@ class _AirViewState extends ConsumerState<AirView> {
   static const _phaseKey = 'air_phase';
   static const _fleetKey = 'air_fleet';
   static const _formationKey = 'air_formation';
+  static const _routeKey = 'air_route';
   static const _formations = [1, 2, 3, 6];
 
   late int _mapId;
@@ -46,26 +58,37 @@ class _AirViewState extends ConsumerState<AirView> {
   late int _fleetIndex;
   late int _formation;
 
+  /// ルート (連戦) で計算する
+  late bool _route;
+
   /// 選んでいるマス (null ならボス)
   String? _node;
 
-  /// 選んでいる敵編成 (null なら制空値が一番高いもの)
-  String? _compKey;
+  /// マス → 選んでいる敵編成 (無ければ制空値が一番高いもの)
+  final Map<String, String> _compKeys = {};
+
+  /// 艦の uid → (スロット番号 → 試しに積む装備。null なら外す)
+  final Map<int, Map<int, Equipment?>> _overrides = {};
+
+  bool _showSwap = false;
 
   @override
   void initState() {
     super.initState();
     int? map, phase, fleet, formation;
+    bool? route;
     try {
       map = localStorage.getInt(_mapKey);
       phase = localStorage.getInt(_phaseKey);
       fleet = localStorage.getInt(_fleetKey);
       formation = localStorage.getInt(_formationKey);
+      route = localStorage.getBool(_routeKey);
     } catch (_) {}
     _mapId = compassMapOf(map ?? 0)?.mapId ?? kCompassMaps.first.mapId;
     _phase = phase ?? 0;
     _fleetIndex = fleet ?? 0;
     _formation = _formations.contains(formation) ? formation! : 1;
+    _route = route ?? false;
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -79,27 +102,32 @@ class _AirViewState extends ConsumerState<AirView> {
     AirDataLoader.loadComps(_map, force: force);
   }
 
-  void _select({int? mapId, int? phase, int? fleetIndex, int? formation}) {
+  void _select({int? mapId, int? phase, int? fleetIndex, int? formation, bool? route}) {
     setState(() {
       if (mapId != null && mapId != _mapId) {
         _mapId = mapId;
         _phase = 0;
         _node = null;
-        _compKey = null;
+        _compKeys.clear();
       }
       if (phase != null && phase != _phase) {
         _phase = phase;
         _node = null;
-        _compKey = null;
+        _compKeys.clear();
       }
-      if (fleetIndex != null) _fleetIndex = fleetIndex;
+      if (fleetIndex != null && fleetIndex != _fleetIndex) {
+        _fleetIndex = fleetIndex;
+        _overrides.clear();
+      }
       if (formation != null) _formation = formation;
+      if (route != null) _route = route;
     });
     try {
       localStorage.setInt(_mapKey, _mapId);
       localStorage.setInt(_phaseKey, _phase);
       localStorage.setInt(_fleetKey, _fleetIndex);
       localStorage.setInt(_formationKey, _formation);
+      localStorage.setBool(_routeKey, _route);
     } catch (_) {}
     _load();
   }
@@ -127,8 +155,7 @@ class _AirViewState extends ConsumerState<AirView> {
     final secondary = TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel.resolveFrom(context));
     final slotItems = data.dataInfo.slotItemInfo;
     final shipInfo = data.dataInfo.shipInfo;
-    final key = AirDataLoader.keyOf(map);
-    final comps = AirDataLoader.comps[key];
+    final comps = AirDataLoader.comps[AirDataLoader.keyOf(map)];
     final abyssal = AirDataLoader.abyssal;
 
     Widget segmented<T extends Object>(T value, Map<T, Widget> children, ValueChanged<T> onChanged) => Padding(
@@ -168,8 +195,16 @@ class _AirViewState extends ConsumerState<AirView> {
         ),
       segmented<int>(
         _formation,
-        {for (final f in _formations) f: Text(repairText(airFormationName(f), airFormationName(f)), style: const TextStyle(fontSize: 12))},
+        {for (final f in _formations) f: Text(airFormationName(f), style: const TextStyle(fontSize: 12))},
         (f) => _select(formation: f),
+      ),
+      segmented<bool>(
+        _route,
+        {
+          false: Text(repairText('1マス', 'One node')),
+          true: Text(repairText('ルート (連戦)', 'Route')),
+        },
+        (v) => _select(route: v),
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -197,24 +232,52 @@ class _AirViewState extends ConsumerState<AirView> {
           secondary));
     } else {
       final byNode = enemyCompsByNode(comps);
-      if (byNode.isEmpty) {
-        children.add(_message(repairText('この海域の敵編成の報告がありません', 'No enemy compositions reported for this map'), secondary));
+      final squad = squads[fleetIndex];
+      final own = ownAirFleet(squad, shipInfo: shipInfo, formation: _formation, overrides: _overrides);
+      List<AirFleet> fleetsOf(String node) => [
+            for (final c in byNode[node]!) enemyAirFleet(c, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo),
+          ];
+      int selectedOf(String node, List<AirFleet> fleets) {
+        final index = byNode[node]!.indexWhere((c) => c.key == _compKeys[node]);
+        return index >= 0 ? index : strongestEnemyComp(fleets);
+      }
+
+      // 計算するマス (1マスなら選んだマス、ルートなら羅針盤で一番通りやすい道のりの戦闘マス)
+      final List<String> battleNodes;
+      List<String> route = const [];
+      if (_route) {
+        final compass = simulateCompass(map, compassFleetOf(squad, admiralLevel: data.seaForceBase.admiral.level));
+        route = compass.likelyRoute;
+        battleNodes = [for (final n in route) if (byNode.containsKey(n)) n];
       } else {
         final nodes = byNode.keys.toList()..sort(_nodeOrder);
-        final node = byNode.containsKey(_node) ? _node! : (byNode.containsKey(map.boss) ? map.boss : nodes.first);
-        final nodeComps = byNode[node]!;
-        final fleets = [
-          for (final c in nodeComps) enemyAirFleet(c, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo),
-        ];
-        final strongest = strongestEnemyComp(fleets);
-        var selected = nodeComps.indexWhere((c) => c.key == _compKey);
-        if (selected < 0) selected = strongest;
-        final own = ownAirFleet(squads[fleetIndex], shipInfo: shipInfo, formation: _formation);
-        final result = simulateAirBattles(own, [fleets[selected]], runs: kAirSimRuns, seed: 1).single;
+        battleNodes = nodes.isEmpty ? const [] : [byNode.containsKey(_node) ? _node! : (byNode.containsKey(map.boss) ? map.boss : nodes.first)];
+      }
+
+      if (byNode.isEmpty || battleNodes.isEmpty) {
+        children.add(_message(
+            _route
+                ? repairText('羅針盤のルート上に敵編成の報告があるマスがありません', 'No reported battles on the likely route')
+                : repairText('この海域の敵編成の報告がありません', 'No enemy compositions reported for this map'),
+            secondary));
+      } else {
+        final enemyFleets = <String, List<AirFleet>>{for (final n in battleNodes) n: fleetsOf(n)};
+        final chosen = [for (final n in battleNodes) enemyFleets[n]![selectedOf(n, enemyFleets[n]!)]];
+        final results = simulateAirBattles(own, chosen, runs: kAirSimRuns, seed: 1);
+        final shown = _route && battleNodes.contains(_node) ? _node! : (_route ? battleNodes.last : battleNodes.single);
+        final index = battleNodes.indexOf(shown);
+        final fleets = enemyFleets[shown]!;
+        if (_route) {
+          children.add(_routeSection(route, battleNodes, results, shown, map, secondary));
+        } else {
+          final nodes = byNode.keys.toList()..sort(_nodeOrder);
+          children.add(_nodePicker(nodes, shown, map));
+        }
         children
-          ..add(_nodePicker(nodes, node, map, byNode))
-          ..add(_patternSection(node, nodeComps, fleets, selected, strongest, secondary))
-          ..addAll(_resultSections(context, own, fleets[selected], result, secondary));
+          ..add(_patternSection(shown, byNode[shown]!, fleets, selectedOf(shown, fleets), strongestEnemyComp(fleets), secondary))
+          ..addAll(_resultSections(own, chosen[index], results[index], secondary,
+              title: _route ? repairText('$shownマス (${index + 1}戦目)', 'Node $shown (battle ${index + 1})') : null))
+          ..add(_swapSection(squad.ships, shipInfo?.map((k, v) => MapEntry(k, v.apiMaxeq)), data.fleet.equipment.values, secondary));
       }
     }
 
@@ -256,7 +319,17 @@ class _AirViewState extends ConsumerState<AirView> {
     return byLength != 0 ? byLength : a.compareTo(b);
   }
 
-  Widget _nodePicker(List<String> nodes, String selected, CompassMap map, Map<String, List<EnemyComp>> byNode) {
+  Widget _chip(String label, bool selected, VoidCallback onPressed) => CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        minSize: 30,
+        color: selected ? CupertinoColors.activeBlue : CupertinoColors.tertiarySystemFill,
+        borderRadius: BorderRadius.circular(15),
+        onPressed: onPressed,
+        child: Text(label,
+            style: TextStyle(fontSize: 13, color: selected ? CupertinoColors.white : CupertinoColors.label.resolveFrom(context))),
+      );
+
+  Widget _nodePicker(List<String> nodes, String selected, CompassMap map) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Wrap(
@@ -264,23 +337,46 @@ class _AirViewState extends ConsumerState<AirView> {
         runSpacing: 6,
         children: [
           for (final n in nodes)
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              minSize: 30,
-              color: n == selected ? CupertinoColors.activeBlue : CupertinoColors.tertiarySystemFill,
-              borderRadius: BorderRadius.circular(15),
-              onPressed: () => setState(() {
-                _node = n;
-                _compKey = null;
-              }),
-              child: Text(
-                n == map.boss ? repairText('$n (ボス)', '$n (boss)') : n,
-                style: TextStyle(
-                    fontSize: 13, color: n == selected ? CupertinoColors.white : CupertinoColors.label.resolveFrom(context)),
-              ),
-            ),
+            _chip(n == map.boss ? repairText('$n (ボス)', '$n (boss)') : n, n == selected, () => setState(() => _node = n)),
         ],
       ),
+    );
+  }
+
+  /// ルート: 戦闘マスごとの要約 (タップでそのマスの詳細)
+  Widget _routeSection(List<String> route, List<String> nodes, List<AirBattleResult> results, String selected, CompassMap map,
+      TextStyle secondary) {
+    return QuestDetailSection(
+      title: repairText('ルート ${route.join('→')}', 'Route ${route.join('→')}'),
+      footer: repairText('羅針盤シミュレーターで一番通りやすい道のりのうち、敵編成の報告があるマス。艦載機は前の戦闘で減った分を持ち越します。タップで詳細',
+          'Battles on the most likely route. Plane losses carry over. Tap for details'),
+      children: [
+        for (final (i, n) in nodes.indexed)
+          () {
+            final r = results[i];
+            final before = r.own.expand((s) => s).fold(0.0, (sum, s) => sum + s.before);
+            final after = r.own.expand((s) => s).fold(0.0, (sum, s) => sum + s.after);
+            return CupertinoListTile(
+              leading: Icon(n == selected ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.circle,
+                  size: 20, color: n == selected ? CupertinoColors.activeBlue : CupertinoColors.systemGrey),
+              title: Text(
+                repairText('${i + 1}戦目 $nマス${n == map.boss ? ' (ボス)' : ''}・制空値 ${r.ownPower.round()} / ${r.enemyPower}',
+                    'Battle ${i + 1} $n${n == map.boss ? ' (boss)' : ''}, AP ${r.ownPower.round()} / ${r.enemyPower}'),
+                style: const TextStyle(fontSize: 14),
+              ),
+              subtitle: Text(
+                [
+                  airStatesText(r.states),
+                  repairText('艦載機 ${_count(before)} → ${_count(after)}機', 'Planes ${_count(before)} → ${_count(after)}'),
+                  if (r.enemyStrikeZero != null)
+                    repairText('敵の航空攻撃なし ${airPercent(r.enemyStrikeZero!)}', 'No enemy airstrike ${airPercent(r.enemyStrikeZero!)}'),
+                ].join('\n'),
+                maxLines: 3,
+              ),
+              onTap: () => setState(() => _node = n),
+            );
+          }(),
+      ],
     );
   }
 
@@ -291,7 +387,7 @@ class _AirViewState extends ConsumerState<AirView> {
     if (!shown.contains(strongest)) shown.add(strongest);
     return QuestDetailSection(
       title: repairText('$nodeマスの敵編成 (${comps.length}パターン)', 'Node $node (${comps.length} patterns)'),
-      footer: repairText('最初は制空値が一番高い編成。タップで切り替え', 'The strongest air power is selected first. Tap to switch'),
+      footer: repairText('最初は制空値が一番高い編成。タップで切り替え。右の%は報告の割合', 'The strongest air power is selected first. Tap to switch'),
       children: [
         for (final i in shown)
           CupertinoListTile(
@@ -304,18 +400,18 @@ class _AirViewState extends ConsumerState<AirView> {
             ),
             subtitle: Text(fleets[i].ships.map((s) => s.name).join('・'), maxLines: 2),
             additionalInfo: Text(total == 0 ? '' : airPercent(comps[i].count / total), style: secondary),
-            onTap: () => setState(() => _compKey = comps[i].key),
+            onTap: () => setState(() => _compKeys[node] = comps[i].key),
           ),
       ],
     );
   }
 
-  List<Widget> _resultSections(BuildContext context, AirFleet own, AirFleet enemy, AirBattleResult result, TextStyle secondary) {
+  List<Widget> _resultSections(AirFleet own, AirFleet enemy, AirBattleResult result, TextStyle secondary, {String? title}) {
     final needed = airPowerNeeded(result.enemyPower);
     final ownHasAaci = own.ships.any((s) => s.aaci.isNotEmpty);
     return [
       QuestDetailSection(
-        title: repairText('制空権', 'Air superiority'),
+        title: title == null ? repairText('制空権', 'Air superiority') : repairText('制空権 ($title)', 'Air superiority ($title)'),
         children: [
           CupertinoListTile(
             title: Text(repairText('制空値', 'Air power')),
@@ -340,12 +436,12 @@ class _AirViewState extends ConsumerState<AirView> {
         ],
       ),
       QuestDetailSection(
-        title: repairText('自艦隊の艦載機 (戦闘後の平均)', 'Your planes (average after the battle)'),
+        title: repairText('自艦隊の艦載機 (戦闘前 → 戦闘後の平均)', 'Your planes (before → average after)'),
         footer: repairText('全滅 = そのスロットが0機になる確率。戦闘機は対空砲火では落ちません', 'Wiped = chance the slot ends at 0'),
         children: _slotRows(own, result.own, secondary, enemy: false),
       ),
       QuestDetailSection(
-        title: repairText('敵艦隊の艦載機', 'Enemy planes'),
+        title: repairText('敵艦隊の艦載機 (出撃 → 制空戦後 → 対空砲火後)', 'Enemy planes (start → after air combat → after AA)'),
         footer: [
           if (result.enemyStrikeZero != null)
             repairText('敵の航空攻撃が来なくなる (攻撃機が全部落ちる) 確率: ${airPercent(result.enemyStrikeZero!)}',
@@ -382,6 +478,97 @@ class _AirViewState extends ConsumerState<AirView> {
       rows.add(CupertinoListTile(title: Text(repairText('艦載機なし', 'No planes'), style: secondary)));
     }
     return rows;
+  }
+
+  /// 装備を試す: 艦載機を積める各スロットに、持っている艦載機を試しに積む (満載の機数で計算)
+  Widget _swapSection(List<Ship> ships, Map<int, List<int>?>? maxeqs, Iterable<Equipment> owned, TextStyle secondary) {
+    final changes = _overrides.values.fold(0, (sum, m) => sum + m.length);
+    final rows = <Widget>[];
+    if (_showSwap) {
+      for (final ship in ships) {
+        if (ship.escape == true) continue;
+        final maxeq = maxeqs?[ship.shipId] ?? const <int>[];
+        final equipment = ship.equipment ?? const <Equipment>[];
+        for (var i = 0; i < maxeq.length; i++) {
+          if (maxeq[i] <= 0) continue;
+          final changed = _overrides[ship.uid]?.containsKey(i) ?? false;
+          final current = changed ? _overrides[ship.uid]![i] : (i < equipment.length ? equipment[i] : null);
+          rows.add(CupertinoListTile(
+            title: Text('${ship.name ?? ''} ${i + 1}', style: const TextStyle(fontSize: 14)),
+            subtitle: Text(
+              '${current == null ? repairText('(なし)', '(empty)') : airEquipmentLabel(current)}'
+              '${changed ? repairText('・試し中 (${maxeq[i]}機)', ', trying (${maxeq[i]})') : ''}',
+              style: changed ? const TextStyle(color: CupertinoColors.activeOrange) : null,
+            ),
+            trailing: const Icon(CupertinoIcons.chevron_right, size: 16),
+            onTap: () => _pickPlane(ship, i, owned),
+          ));
+        }
+      }
+      if (rows.isEmpty) rows.add(CupertinoListTile(title: Text(repairText('艦載機を積める艦がいません', 'No ship can carry planes'), style: secondary)));
+    }
+    return QuestDetailSection(
+      title: repairText('装備を試す', 'Try other planes'),
+      footer: _showSwap
+          ? repairText('持っている艦載機から選びます (積めるかどうか・数は確かめていません)。試したスロットは満載で計算します',
+              'Pick from your planes (equippability and stock are not checked). Swapped slots are full.')
+          : null,
+      children: [
+        CupertinoListTile(
+          title: Text(changes == 0
+              ? repairText('艦載機を入れ替えて計算する', 'Swap planes and recalculate')
+              : repairText('$changes か所を試しています', 'Trying $changes change(s)')),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (changes > 0)
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minSize: 28,
+                onPressed: () => setState(_overrides.clear),
+                child: Text(repairText('元に戻す', 'Reset'), style: const TextStyle(fontSize: 13)),
+              ),
+            Icon(_showSwap ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down, size: 16),
+          ]),
+          onTap: () => setState(() => _showSwap = !_showSwap),
+        ),
+        ...rows,
+      ],
+    );
+  }
+
+  void _pickPlane(Ship ship, int slot, Iterable<Equipment> owned) {
+    final candidates = airSwapCandidates(owned).take(60).toList();
+    void apply(Equipment? equipment, {bool reset = false}) {
+      setState(() {
+        final map = _overrides.putIfAbsent(ship.uid, () => {});
+        if (reset) {
+          map.remove(slot);
+          if (map.isEmpty) _overrides.remove(ship.uid);
+        } else {
+          map[slot] = equipment;
+        }
+      });
+      Navigator.of(context).pop();
+    }
+
+    showCupertinoModalPopup<void>(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        title: Text('${ship.name ?? ''} ${slot + 1}'),
+        actions: [
+          CupertinoActionSheetAction(onPressed: () => apply(null, reset: true), child: Text(repairText('元の装備に戻す', 'Original'))),
+          CupertinoActionSheetAction(onPressed: () => apply(null), child: Text(repairText('外す', 'Remove'))),
+          for (final (e, n) in candidates)
+            CupertinoActionSheetAction(
+              onPressed: () => apply(e),
+              child: Text('${airEquipmentLabel(e)}${n > 1 ? ' ×$n' : ''}', style: const TextStyle(fontSize: 15)),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(repairText('キャンセル', 'Cancel')),
+        ),
+      ),
+    );
   }
 
   static String _count(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);

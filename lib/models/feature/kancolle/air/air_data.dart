@@ -103,14 +103,23 @@ int airFleetAaBonus(List<AirAaEquip> equips, {num bonusAa = 0}) {
   return total.floor();
 }
 
-/// アプリの艦1隻 → シミュレーター用
-AirShip airShipOf(Ship ship, {int? shipClass}) {
-  final equipment = ship.equipment ?? const <Equipment>[];
-  final all = [...equipment, ...?ship.exEquipment];
+/// アプリの艦1隻 → シミュレーター用。
+/// [overrides] はスロット番号 → 試しに積む装備 (null なら外す)。試しに積んだスロットは [maxSlots] (満載) の機数で計算する
+AirShip airShipOf(Ship ship, {int? shipClass, Map<int, Equipment?> overrides = const {}, List<int>? maxSlots}) {
+  final original = ship.equipment ?? const <Equipment>[];
+  final onSlot = ship.onSlot ?? const <int>[];
+  final slotCount = [original.length, onSlot.length, ...overrides.keys.map((i) => i + 1)].reduce(max);
+  final equipment = <(int, Equipment)>[];
   final slots = <AirSlot>[];
-  for (final (i, e) in equipment.indexed) {
+  for (var i = 0; i < slotCount; i++) {
+    final changed = overrides.containsKey(i);
+    final e = changed ? overrides[i] : (i < original.length ? original[i] : null);
+    if (e == null) continue;
+    equipment.add((i, e));
     final category = (e.type?.length ?? 0) > 2 ? e.type![2] : 0;
-    final count = (ship.onSlot != null && i < ship.onSlot!.length) ? ship.onSlot![i] : 0;
+    final count = changed
+        ? (maxSlots != null && i < maxSlots.length ? maxSlots[i] : (i < onSlot.length ? onSlot[i] : 0))
+        : (i < onSlot.length ? onSlot[i] : 0);
     if (!kAirPlaneCategories.contains(category) || count <= 0) continue;
     slots.add(AirSlot(
       i,
@@ -125,11 +134,12 @@ AirShip airShipOf(Ship ship, {int? shipClass}) {
       count,
     ));
   }
-  final equips = [for (final e in all) AirAaEquip.of(e)];
-  // 艦の対空値 (api_taiku) は装備の対空と装備ボーナスを含むので、装備の分を引いて素の対空とする
+  final equips = [for (final (_, e) in equipment) AirAaEquip.of(e), for (final e in ship.exEquipment ?? const <Equipment>[]) AirAaEquip.of(e)];
+  // 艦の対空値 (api_taiku) は装備の対空と装備ボーナスを含むので、今の装備の分を引いて素の対空とする
   // (装備ボーナスは分けられないので素の対空に含めて計算する。差は装備ボーナスの 1/4 程度)
   final total = (ship.antiAircraft?.isNotEmpty ?? false) ? ship.antiAircraft![0] : 0;
-  final naked = max(0, total - equips.fold(0, (sum, e) => sum + e.aa));
+  final current = [...original, ...?ship.exEquipment].fold(0, (sum, e) => sum + (e.aa ?? 0));
+  final naked = max(0, total - current);
   return AirShip(
     name: ship.name ?? '',
     shipType: ship.shipType ?? 0,
@@ -149,14 +159,52 @@ AirShip airShipOf(Ship ship, {int? shipClass}) {
   );
 }
 
-/// アプリの艦隊 → シミュレーター用 (退避した艦は除く)
-AirFleet ownAirFleet(Squad squad, {Map<int, GetDataApiDataApiMstShipEntity>? shipInfo, int formation = 1}) => AirFleet(
+/// アプリの艦隊 → シミュレーター用 (退避した艦は除く)。
+/// [overrides] は艦の uid → (スロット番号 → 試しに積む装備)
+AirFleet ownAirFleet(
+  Squad squad, {
+  Map<int, GetDataApiDataApiMstShipEntity>? shipInfo,
+  int formation = 1,
+  Map<int, Map<int, Equipment?>> overrides = const {},
+}) =>
+    AirFleet(
       [
         for (final ship in squad.ships)
-          if (ship.escape != true) airShipOf(ship, shipClass: shipInfo?[ship.shipId]?.apiCtype),
+          if (ship.escape != true)
+            airShipOf(
+              ship,
+              shipClass: shipInfo?[ship.shipId]?.apiCtype,
+              overrides: overrides[ship.uid] ?? const {},
+              maxSlots: shipInfo?[ship.shipId]?.apiMaxeq,
+            ),
       ],
       formation: formation,
     );
+
+/// 試しに積める艦載機 (持っている艦載機を、名前・改修値・熟練度が同じものはまとめて、制空値の高い順)
+List<(Equipment, int)> airSwapCandidates(Iterable<Equipment> owned) {
+  final groups = <String, (Equipment, int)>{};
+  for (final e in owned) {
+    final type = e.type ?? const <int>[];
+    if (type.length < 3 || !kAirPlaneCategories.contains(type[2])) continue;
+    final key = '${e.itemId}/${e.level ?? 0}/${e.proficiency ?? 0}';
+    final group = groups[key];
+    groups[key] = (group?.$1 ?? e, (group?.$2 ?? 0) + 1);
+  }
+  final list = groups.values.toList()
+    ..sort((a, b) {
+      double score(Equipment e) {
+        final category = e.type![2];
+        final plane = AirPlane(
+            itemId: e.itemId ?? 0, name: '', category: category, aa: e.aa ?? 0, improvement: e.level ?? 0, proficiency: e.proficiency ?? 0);
+        return airSlotPower(plane, 18).toDouble() + (plane.isAttacker ? 0.5 : 0);
+      }
+
+      final byScore = score(b.$1).compareTo(score(a.$1));
+      return byScore != 0 ? byScore : (a.$1.name ?? '').compareTo(b.$1.name ?? '');
+    });
+  return list;
+}
 
 /// 深海棲艦の素の対空値と搭載数
 class AbyssalTable {

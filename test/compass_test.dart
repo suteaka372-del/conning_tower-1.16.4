@@ -132,6 +132,12 @@ void main() {
     expect(boss('2-5', fleet([kBB, kBB, kCAV, kCL, kDD, kDD], los: 45)), 1);
   });
 
+  test('likely route follows the most probable way', () {
+    expect(simulateCompass(mapNamed('1-5'), fleet([kDD, kDD, kDD, kDD])).likelyRoute, ['A', 'D', 'F', 'G', 'J']);
+    // 5-6 の出撃地点は道のりに含めない
+    expect(simulateCompass(mapNamed('5-6', 0), fleet([kCL, kDD, kDD, kDD, kDD, kDD])).likelyRoute.first, 'A');
+  });
+
   test('3-2: six light ships reach the boss, radar and speed change the way', () {
     final light = [kCL, kDD, kDD, kDD, kDD, kDD];
     expect(boss('3-2', fleet(light, radarShips: 2)), closeTo(1, 1e-9));
