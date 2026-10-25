@@ -65,40 +65,57 @@ class CompassView extends ConsumerStatefulWidget {
 class _CompassViewState extends ConsumerState<CompassView> {
   static const _mapKey = 'compass_map';
   static const _fleetKey = 'compass_fleet';
+  static const _phaseKey = 'compass_phase';
 
   late int _mapId;
   late int _fleetIndex;
+
+  /// ゲージが複数ある海域で、どのゲージを見ているか
+  late int _phase;
 
   @override
   void initState() {
     super.initState();
     int? savedMap;
     int? savedFleet;
+    int? savedPhase;
     try {
       savedMap = localStorage.getInt(_mapKey);
       savedFleet = localStorage.getInt(_fleetKey);
+      savedPhase = localStorage.getInt(_phaseKey);
     } catch (_) {}
     _mapId = compassMapOf(savedMap ?? 0)?.mapId ?? kCompassMaps.first.mapId;
     _fleetIndex = savedFleet ?? 0;
+    _phase = savedPhase ?? 0;
   }
 
-  void _select({int? mapId, int? fleetIndex}) {
+  void _select({int? mapId, int? fleetIndex, int? phase}) {
     setState(() {
-      if (mapId != null) _mapId = mapId;
+      if (mapId != null && mapId != _mapId) {
+        _mapId = mapId;
+        _phase = 0;
+      }
       if (fleetIndex != null) _fleetIndex = fleetIndex;
+      if (phase != null) _phase = phase;
     });
     try {
       localStorage.setInt(_mapKey, _mapId);
       localStorage.setInt(_fleetKey, _fleetIndex);
+      localStorage.setInt(_phaseKey, _phase);
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(kancolleDataProvider);
-    final map = compassMapOf(_mapId)!;
+    final phases = compassMapsOf(_mapId);
+    final phase = _phase.clamp(0, phases.length - 1);
+    final map = phases[phase];
     final areas = {for (final m in kCompassMaps) m.area}.toList()..sort();
-    final mapsInArea = [for (final m in kCompassMaps) if (m.area == map.area) m];
+    final mapsInArea = [
+      for (final m in kCompassMaps)
+        if (m.area == map.area && m.phase == compassMapOf(m.mapId)!.phase) m,
+    ];
     final squads = data.squads;
     final fleetIndex = squads.isEmpty ? 0 : _fleetIndex.clamp(0, squads.length - 1);
     final fleet = squads.isEmpty || squads[fleetIndex].ships.isEmpty
@@ -138,6 +155,12 @@ class _CompassViewState extends ConsumerState<CompassView> {
             {for (final m in mapsInArea) m.mapId: Text(m.name)},
             (mapId) => _select(mapId: mapId),
           ),
+          if (phases.length > 1)
+            segmented<int>(
+              phase,
+              {for (final (i, m) in phases.indexed) i: Text(m.phase ?? '${i + 1}', style: const TextStyle(fontSize: 12))},
+              (index) => _select(phase: index),
+            ),
           if (squads.length > 1)
             segmented<int>(
               fleetIndex,
@@ -190,7 +213,7 @@ class _CompassViewState extends ConsumerState<CompassView> {
               title: repairText('分岐と理由', 'Branches'),
               children: [
                 for (final step in result.steps)
-                  if (map.rules.containsKey(step.node))
+                  if (map.ruleNodes.contains(step.node))
                     CupertinoListTile(
                       title: Text(repairText('${_nodeName(step.node)} (来る確率 ${compassPercent(step.reach)})',
                           '${_nodeName(step.node)} (${compassPercent(step.reach)})')),
@@ -232,7 +255,13 @@ class _CompassViewState extends ConsumerState<CompassView> {
     );
   }
 
-  static String _nodeName(String node) => node == 'Start' ? repairText('出撃地点', 'Start') : repairText('$nodeマス', node);
+  static String _nodeName(String node) {
+    if (node.startsWith('Start')) {
+      final no = node.substring(5).trim();
+      return repairText('出撃地点$no', node);
+    }
+    return repairText('$nodeマス', node);
+  }
 
   static String _logText(CompassLogEntry log) {
     final miss = [for (final s in log.steps) if (s.mismatch) s];

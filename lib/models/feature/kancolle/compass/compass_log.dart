@@ -61,9 +61,14 @@ class CompassRecorder {
   final int maxEntries;
 
   List<CompassLogEntry>? _entries;
-  CompassMap? _map;
+
+  /// 出撃中の海域 (ゲージが複数ある海域は、ゲージごとの判定すべて)
+  List<CompassMap> _maps = const [];
   CompassFleet? _fleet;
   String _last = 'Start';
+
+  /// 出撃地点から [_last] の1つ前までに通ったマス
+  final List<String> _path = [];
   CompassLogEntry? _current;
 
   /// 新しい順
@@ -88,30 +93,47 @@ class CompassRecorder {
   /// 出撃 (api_req_map/start) と進撃 (api_req_map/next) のたびに呼ぶ。[fleet] は出撃したときの艦隊
   void onMapPoint({required int mapId, required int? cell, required bool start, CompassFleet Function()? fleet}) {
     if (start) {
-      _map = compassMapOf(mapId);
+      _maps = compassMapsOf(mapId);
       _current = null;
       _last = 'Start';
-      if (_map == null) return; // まだ対応していない海域
+      _path.clear();
+      if (_maps.isEmpty) return; // まだ対応していない海域
       _fleet = fleet?.call();
       _current = CompassLogEntry(mapId: mapId, time: DateTime.now());
       entries.insert(0, _current!);
       if (entries.length > maxEntries) entries.removeRange(maxEntries, entries.length);
     }
-    final map = _map;
     final current = _current;
-    if (map == null || current == null || cell == null || map.mapId != mapId) return;
-    final to = map.letterOf(cell);
-    if (to == null) return;
-    final fleetNow = _fleet;
-    final outcome = fleetNow == null ? null : map.decide(_last, fleetNow);
-    current.steps.add(CompassLogStep(
-      from: _last,
-      to: to,
-      predicted: outcome?.probabilityOf(to),
-      reason: outcome?.reason ?? '',
-    ));
-    _last = to;
+    if (_maps.isEmpty || current == null || cell == null || _maps.first.mapId != mapId) return;
+    // ゲージによってマスの数が違う海域があるので、どれかのゲージにあるマスなら使う
+    final edge = [for (final map in _maps) map.edges[cell]].nonNulls.firstOrNull;
+    if (edge == null) return;
+    final (from, to) = edge;
+    // 出撃地点が2つある海域などで、1つ手前のマスを飛ばして届くことがある
+    if (from != _last && _maps.any((map) => map.nextOf(_last).contains(from))) _step(current, from);
+    _step(current, to);
     _write();
+  }
+
+  void _step(CompassLogEntry current, String to) {
+    final fleetNow = _fleet;
+    double? predicted;
+    var reason = '';
+    if (fleetNow != null) {
+      // ゲージごとの判定のうち、一番当てはまるもので比べる (今どのゲージかはわからないため)
+      for (final map in _maps) {
+        final outcome = map.decide(_last, fleetNow, path: _path);
+        if (outcome == null) continue;
+        final p = outcome.choice && outcome.options.any((o) => o.node == to) ? 1.0 : outcome.probabilityOf(to);
+        if (predicted == null || p > predicted) {
+          predicted = p;
+          reason = outcome.reason;
+        }
+      }
+    }
+    current.steps.add(CompassLogStep(from: _last, to: to, predicted: predicted, reason: reason));
+    _path.add(_last);
+    _last = to;
   }
 }
 

@@ -1,8 +1,10 @@
 import 'compass_engine.dart';
 
 // 1-1〜2-5 の分岐条件。艦これ攻略 Wiki* の各海域ページ「ルート分岐法則」の内容を元に書き直したもの。
-// 表記: 戦艦級 = 高速戦艦 + 戦艦 / 空母系 = 正規空母 + 装甲空母 + 軽空母 / 正規空母 = 正規空母 + 装甲空母 /
-// 重巡級 = 重巡 + 航巡 / 「軽巡」は艦種が軽巡のもの (練巡・雷巡は含まない) / (低速)戦艦 = 艦種が戦艦 (速力は関係ない)
+// 表記 (Wiki の「注意すべき艦種表記一覧」。公式の艦種タブと同じ):
+// 戦艦級 = 高速戦艦 + (低速)戦艦 + 航空戦艦 / 戦艦 = 高速戦艦 + (低速)戦艦 / 空母系 = 正規空母 + 装甲空母 + 軽空母 /
+// 正規空母 = 正規空母 + 装甲空母 / 重巡級 = 重巡 + 航巡 / 軽巡級 = 軽巡 + 練巡 + 雷巡 /
+// 「軽巡」は艦種が軽巡のもの (練巡・雷巡は含まない) / (低速)戦艦 = 艦種が戦艦 (速力は関係ない)
 // 「?」付きなど Wiki でも確かでない条件や、割合が書かれていないランダムは estimated (推定) として扱う。
 
 final List<CompassMap> kCompassMapsWorld12 = [
@@ -171,7 +173,7 @@ final List<CompassMap> kCompassMapsWorld12 = [
         return go('B', 'それ以外');
       },
       'F': (f) {
-        if (f.bbClass >= 1 || f.standardCarriers >= 1 || f.subs >= 1) return go('I', '戦艦 (航空戦艦は除く) / 正規空母 / 潜水艦を含む');
+        if (f.battleships >= 1 || f.standardCarriers >= 1 || f.subs >= 1) return go('I', '戦艦 (航空戦艦は除く) / 正規空母 / 潜水艦を含む');
         if (f.cvl >= 2) return go('I', '軽空母2隻以上');
         if (f.cl >= 3) return go('I', '軽巡3隻以上');
         return go('G', 'それ以外');
@@ -449,7 +451,7 @@ final List<CompassMap> kCompassMapsWorld12 = [
         if (f.ddde == 1) return lean('L', 'O', '(駆逐+海防)1隻 (Lマス寄り)', 65);
         // ここから下は Wiki でも「?」付き
         if (f.cav >= 1) {
-          if (f.bbClass >= 1) return lean('O', 'L', '航巡 かつ 戦艦を含む (Oマス寄り・Wikiでも推測)');
+          if (f.battleships >= 1) return lean('O', 'L', '航巡 かつ 戦艦を含む (Oマス寄り・Wikiでも推測)');
           return lean('L', 'O', '航巡を含む (Lマス寄り・Wikiでも推測)');
         }
         if (f.bbClass >= 2) return split({'O': 77.5, 'L': 22.5}, '戦艦級2隻以上 (Oマス寄り・Wikiでも推測)', estimated: true);
