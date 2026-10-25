@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/compass/compass_log.dart';
 import 'package:conning_tower/models/feature/kancolle/compass/compass_maps.dart';
@@ -5,7 +6,6 @@ import 'package:conning_tower/models/feature/kancolle/expedition_check.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/pages/dashboard_pages/air_sim_page.dart';
 import 'package:conning_tower/pages/dashboard_pages/damage_sim_page.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:flutter/cupertino.dart';
@@ -156,7 +156,7 @@ class _CompassViewState extends ConsumerState<CompassView> {
 
   @override
   Widget build(BuildContext context) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final phases = compassMapsOf(_mapId);
     final phase = _phase.clamp(0, phases.length - 1);
     final map = phases[phase];
@@ -170,7 +170,7 @@ class _CompassViewState extends ConsumerState<CompassView> {
     final fleet = squads.isEmpty || squads[fleetIndex].ships.isEmpty
         ? null
         : compassFleetOf(squads[fleetIndex], admiralLevel: data.seaForceBase.admiral.level);
-    final result = fleet == null ? null : simulateCompass(map, fleet);
+    final result = fleet == null ? null : simulateCompassCached(map, fleet);
     final secondary = TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel.resolveFrom(context));
     final logs = [for (final e in compassRecorder.entries) if (e.mapId == map.mapId) e].take(5).toList();
 

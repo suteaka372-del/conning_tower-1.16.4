@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/models/feature/kancolle/battle_info.dart';
 import 'package:conning_tower/widgets/kancolle_squad_slot_info.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
@@ -12,7 +13,6 @@ import '../models/feature/kancolle/data.dart';
 import '../models/feature/kancolle/map_state.dart';
 import '../pages/dashboard_pages/battle_info_page.dart';
 import '../providers/generatable/kancolle_localization_provider.dart';
-import '../providers/kancolle_data_provider.dart';
 
 class KancolleBattleMoreInfoPage extends ConsumerStatefulWidget {
   const KancolleBattleMoreInfoPage({super.key});
@@ -32,7 +32,7 @@ class _KancolleBattleMoreInfoPageState
 
   @override
   Widget build(BuildContext context) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final battleInfo = data.battleInfo;
 
     Locale locale = Localizations.localeOf(context);

@@ -4,7 +4,9 @@ import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/data/kcwiki/ship.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/pages/libs_info.dart';
+import 'package:conning_tower/pages/perf_page.dart';
 import 'package:conning_tower/pages/log_viewer.dart';
 import 'package:conning_tower/providers/generatable/kcwiki_data_provider.dart';
 import 'package:conning_tower/providers/generatable/settings_provider.dart';
@@ -102,7 +104,12 @@ class _KancolleListenSettingsState
                   title: Text(S.of(context).KanColleLogbook),
                   trailing: const CupertinoListTileChevron(),
                   onTap: () => navigatorToCupertino(context, LogViewer(previousPageTitle: widget.showNavigatorBar ? 'KC' : null)),
-                )
+                ),
+                CupertinoListTile(
+                  title: Text(repairText('動作の重さ', 'Performance')),
+                  trailing: const CupertinoListTileChevron(),
+                  onTap: () => navigatorToCupertino(context, const PerfPage()),
+                ),
               ],
             ),
             CupertinoListSection.insetGrouped(

@@ -1,6 +1,6 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/data/kcsapi/start2/get_data_entity.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/input_pages.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
@@ -55,8 +55,8 @@ class _KancolleShipRegisterViewerState
   Widget build(BuildContext context) {
     super.build(context);
     shipLogs = objectbox.queryShipLog(admiral: widget.admiralName);
-    final data = ref.watch(kancolleDataProvider).dataInfo.shipInfo;
-    notRegShipIds = ref.watch(kancolleDataProvider).fleet.notInFleetIds;
+    final data = watchKancolleData(ref, context).dataInfo.shipInfo;
+    notRegShipIds = watchKancolleData(ref, context).fleet.notInFleetIds;
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(

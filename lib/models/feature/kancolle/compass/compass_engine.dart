@@ -5,6 +5,8 @@
 // マスの番号とつながり (api_no → マスの記号) は KC3Kai/kancolle-replay の kcEDGES.js
 // (MIT License, Copyright (c) 2016 fourinone41) を元にしている。
 
+import 'package:conning_tower/utils/memo.dart';
+
 /// 判定に使う艦の情報
 class CompassShip {
   /// 艦種 (api_stype)
@@ -49,6 +51,10 @@ class CompassFleet {
   final double Function(double coefficient) losScore;
 
   CompassFleet(this.ships, {double Function(double coefficient)? losScore}) : losScore = losScore ?? ((_) => 0);
+
+  /// 計算結果を使い回すためのキー (分岐点係数は 1〜4 だけ使う)
+  String get key => '${[for (final s in ships) '${s.shipType},${s.speed},${s.drums},${s.radars},${s.daihatsu},${s.shipId},${s.name}'].join('|')}'
+      '/${[for (var c = 1; c <= 4; c++) losScore(c.toDouble())].join(',')}';
 
   int get n => ships.length;
 
@@ -346,6 +352,12 @@ class CompassResult {
 ///
 /// 通ってきたマスで分岐が変わる海域があるので、道のりごとにたどる (同じマスには2回行かない)。
 /// 能動分岐はボスへ着く確率が一番高い行き先を選んだとする。
+CompassResult simulateCompassCached(CompassMap map, CompassFleet fleet) =>
+    (_compassResults[map] ??= MemoCache(16)).get(fleet.key, () => simulateCompass(map, fleet));
+
+/// 海域ごとの計算結果 (艦隊が同じなら使い回す。ゲームのデータが届くたびに画面を作り直すので)
+final _compassResults = Expando<MemoCache<CompassResult>>();
+
 CompassResult simulateCompass(CompassMap map, CompassFleet fleet) {
   final sim = _Simulation(map, fleet);
   sim.walk('Start', const [], 1);

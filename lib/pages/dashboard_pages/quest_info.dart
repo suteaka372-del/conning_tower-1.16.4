@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_assistant.dart';
@@ -37,7 +38,7 @@ class _QuestInfoPageState extends ConsumerState<QuestInfoPage>
   Widget build(BuildContext context) {
     super.build(context);
     // データが変わったら作り直す (中身は下の builder で最新のデータを読む)
-    ref.watch(kancolleDataProvider);
+    watchKancolleData(ref, context);
 
     return Padding(
       padding: tabContentMargin,

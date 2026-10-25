@@ -1,9 +1,9 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/models/feature/kancolle/air_battle_record.dart';
 import 'package:conning_tower/models/feature/kancolle/anti_air_cut_in.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,7 +23,7 @@ class KancolleAirBattleSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final phases = data.airBattle.phases;
     if (phases.isEmpty) return const SizedBox.shrink();
     final battleInfo = data.battleInfo;

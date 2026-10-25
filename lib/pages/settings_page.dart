@@ -2,6 +2,8 @@ import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/pages/perf_page.dart';
 import 'package:conning_tower/providers/generatable/kcwiki_data_provider.dart';
 import 'package:conning_tower/providers/generatable/settings_provider.dart';
 import 'package:conning_tower/providers/theme_provider.dart';
@@ -204,6 +206,13 @@ class SettingsPageState extends ConsumerState<SettingsPage> {
                   ref.watch(settingsProvider.notifier).setBool('showDashboardInHome', value);
                 },
               ),
+            ),
+            CupertinoListTile(
+              title: Text(repairText('動作の重さ', 'Performance')),
+              subtitle: Text(repairText('ゲームのデータの処理と画面の作り直しにかかった時間', 'Time spent on game data and redraws')),
+              leading: const DummyIcon(color: CupertinoColors.systemOrange, icon: CupertinoIcons.speedometer),
+              trailing: const CupertinoListTileChevron(),
+              onTap: () => navigatorToCupertino(context, const PerfPage()),
             ),
             CupertinoListTile(
               title: Text(

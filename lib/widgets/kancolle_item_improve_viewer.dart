@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'dart:developer';
 
 import 'package:conning_tower/main.dart';
@@ -5,7 +6,6 @@ import 'package:conning_tower/models/data/ooyodo/akashi_schedule.dart';
 import 'package:conning_tower/providers/generatable/kancolle_item_data_provider.dart';
 import 'package:conning_tower/providers/generatable/kancolle_localization_provider.dart';
 import 'package:conning_tower/providers/generatable/kcwiki_data_provider.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/toast.dart';
 import 'package:conning_tower/widgets/input_pages.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
@@ -78,7 +78,7 @@ class _KancolleItemImproveViewerState
 
   @override
   Widget build(BuildContext context) {
-    final gameData = ref.watch(kancolleDataProvider);
+    final gameData = watchKancolleData(ref, context);
     slotItemMapOrigin = gameData.dataInfo.slotItemNameMap;
     final itemData = ref.watch(akashiScheduleDataProvider);
     Locale locale = Localizations.localeOf(context);

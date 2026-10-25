@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'dart:async';
 
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
@@ -162,7 +163,7 @@ class _KancolleRepairTimerSectionState extends ConsumerState<KancolleRepairTimer
 
   @override
   Widget build(BuildContext context) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final squads = data.squads;
     if (widget.squadIndex < 0 || widget.squadIndex >= squads.length) return const SizedBox.shrink();
     final squad = squads[widget.squadIndex];

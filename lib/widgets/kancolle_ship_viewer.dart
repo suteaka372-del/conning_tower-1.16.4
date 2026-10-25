@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'dart:developer';
 
 import 'package:conning_tower/generated/l10n.dart';
@@ -6,7 +7,6 @@ import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/models/feature/kancolle/ship_filter.dart';
 import 'package:conning_tower/widgets/kancolle_ship_filter_editor.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/local_navigator.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
@@ -322,7 +322,7 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
 
   @override
   Widget build(BuildContext context) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     ships = data.fleet.ships;
     updateShipTypeMap(data);
     sortShips();

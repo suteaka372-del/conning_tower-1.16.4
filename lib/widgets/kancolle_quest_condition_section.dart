@@ -1,7 +1,7 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_fleet_condition.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_progress.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,7 +15,7 @@ class KancolleQuestConditionSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     if (fleetNumber < 1 || fleetNumber > data.squads.length) return const SizedBox.shrink();
     final items = questConditionItems(
       fleet: QuestFleet.fromShips(fleetNumber, data.squads[fleetNumber - 1].ships, data.dataInfo.shipInfo),

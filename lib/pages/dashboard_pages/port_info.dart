@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'dart:convert';
 
 import 'package:auto_size_text/auto_size_text.dart';
@@ -78,7 +79,7 @@ class _PortInfoState extends ConsumerState<PortInfo>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    var data = ref.watch(kancolleDataProvider);
+    var data = watchKancolleData(ref, context);
     _seaForceBase =
         data.seaForceBase.admiral.name == "" ? null : data.seaForceBase;
 

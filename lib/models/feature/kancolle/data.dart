@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -762,9 +763,25 @@ class KancolleData {
     }
   }
 
+  static Timer? _questSaveTimer;
+  static QuestProgressTracker? _unsavedQuestProgress;
+
+  /// 任務の進捗の保存は少し待ってまとめる (通信のたびに全部を書き出さないように)。
+  /// アプリが裏に回るときは [flushQuestProgress] ですぐ書く
   void _saveQuestProgress() {
+    _unsavedQuestProgress = questProgress;
+    _questSaveTimer?.cancel();
+    _questSaveTimer = Timer(const Duration(seconds: 2), flushQuestProgress);
+  }
+
+  static void flushQuestProgress() {
+    _questSaveTimer?.cancel();
+    _questSaveTimer = null;
+    final progress = _unsavedQuestProgress;
+    _unsavedQuestProgress = null;
+    if (progress == null) return;
     try {
-      localStorage.setString(_kQuestProgressKey, questProgress.encode());
+      localStorage.setString(_kQuestProgressKey, progress.encode());
     } catch (e) {
       log("save quest progress failed: $e");
     }

@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'dart:math';
 
 import 'package:carousel_slider/carousel_slider.dart';
@@ -5,7 +6,6 @@ import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/local_navigator.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/components/label.dart';
@@ -109,7 +109,7 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
     eventShipTags.whenData((data) => setState(() {
           shipTagsData = data.data;
         }));
-    var data = ref.watch(kancolleDataProvider);
+    var data = watchKancolleData(ref, context);
     var squads = data.squads;
     final shipInfo = data.dataInfo.shipInfo;
     Locale locale = Localizations.localeOf(context);

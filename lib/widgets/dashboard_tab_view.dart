@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/dashboard_tab_provider.dart';
 import '../providers/generatable/settings_provider.dart';
 
 class MyOverlayColor extends WidgetStateColor {
@@ -61,29 +62,41 @@ class _DashboardTabViewState extends ConsumerState<DashboardTabView>
     if (widget.colors != null) {
       _selectedColor = widget.colors![_tabController.index];
     }
+    // 以前は build のたびに足していたので、作り直すたびにリスナーが増えていた
+    _tabController.addListener(_onTabChanged);
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showTab());
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
 
+  /// 表示中のタブを伝える (隠れているタブはゲームのデータが届いても作り直さない)
+  void _showTab() {
+    if (!mounted) return;
+    final shown = ref.read(visibleDashboardTabProvider.notifier);
+    if (shown.state != _tabController.index) shown.state = _tabController.index;
+  }
+
+  void _onTabChanged() {
+    _selectedColor = widget.colors![_tabController.index];
+    _showTab();
+    if (!_tabController.indexIsChanging) {
+      EasyThrottle.throttle("dashboardIndex", const Duration(seconds: 1), () {
+        print("dashboardIndex: ${_tabController.index}");
+        ref
+            .read(settingsProvider.notifier)
+            .setInt("dashboardIndex", _tabController.index);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    _tabController.addListener(() {
-      _selectedColor = widget.colors![_tabController.index];
-      if (!_tabController.indexIsChanging) {
-        EasyThrottle.throttle("dashboardIndex", const Duration(seconds: 1), () {
-          print("dashboardIndex: ${_tabController.index}");
-          ref
-              .watch(settingsProvider.notifier)
-              .setInt("dashboardIndex", _tabController.index);
-        });
-      }
-    });
-
     ref.listen(settingsProvider, (prev, next) {
       if (next.dashboardIndex != _tabController.index &&
           next.dashboardIndex < widget.tabs.length) {
@@ -135,7 +148,9 @@ class _DashboardTabViewState extends ConsumerState<DashboardTabView>
         ),
         body: TabBarView(
           controller: _tabController,
-          children: widget.contents,
+          children: [
+            for (final (i, content) in widget.contents.indexed) DashboardTabScope(index: i, child: content),
+          ],
         ),
       ),
     );

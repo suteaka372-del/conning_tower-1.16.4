@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'dart:developer';
 
 import 'package:auto_size_text/auto_size_text.dart';
@@ -12,7 +13,6 @@ import 'package:conning_tower/models/feature/kancolle/map_info.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/providers/generatable/kcwiki_data_provider.dart';
 import 'package:conning_tower/providers/generatable/settings_provider.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/providers/raw_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/input_pages.dart';
@@ -50,7 +50,7 @@ class _BattleInfoPageState extends ConsumerState<BattleInfoPage>
   Widget build(BuildContext context) {
     super.build(context);
     int crossAxisCount = 1;
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final kcWikiData = ref.watch(kcWikiDataStateProvider);
     final battleInfo = data.battleInfo;
     final useItemData = data.dataInfo.itemInfo;

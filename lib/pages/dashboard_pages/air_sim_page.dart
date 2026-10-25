@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/air/air_base_store.dart';
 import 'package:conning_tower/models/feature/kancolle/air/air_data.dart';
@@ -6,7 +7,7 @@ import 'package:conning_tower/models/feature/kancolle/equipment.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/providers/air_data_provider.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
+import 'package:conning_tower/utils/memo.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -58,6 +59,11 @@ class _AirViewState extends ConsumerState<AirView> {
   late int _phase;
   late int _fleetIndex;
   late int _formation;
+
+  /// 計算結果の使い回し (ゲームのデータが届くたびに作り直すが、艦隊や敵が同じなら計算し直さない)
+  final _byNode = Memo<Map<String, List<EnemyComp>>>();
+  final _enemyFleets = Memo<Map<String, List<AirFleet>>>();
+  final _battles = MemoCache<List<AirBattleResult>>(8);
 
   /// ルート (連戦) で計算する
   late bool _route;
@@ -148,7 +154,7 @@ class _AirViewState extends ConsumerState<AirView> {
   }
 
   Widget _build(BuildContext context) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final map = _map;
     final phases = compassMapsOf(_mapId);
     final phase = _phase.clamp(0, phases.length - 1);
@@ -238,10 +244,11 @@ class _AirViewState extends ConsumerState<AirView> {
               : repairText('データを取得できませんでした。「取り直す」を押してください', 'Could not load the data. Tap Reload.'),
           secondary));
     } else {
-      final byNode = enemyCompsByNode(comps);
+      final byNode = _byNode.of([comps], () => enemyCompsByNode(comps));
       final squad = squads[fleetIndex];
       final own = ownAirFleet(squad, shipInfo: shipInfo, formation: _formation, overrides: _overrides);
-      List<AirFleet> fleetsOf(String node) => [
+      final enemyFleetCache = _enemyFleets.of([byNode, abyssal, slotItems, shipInfo], () => <String, List<AirFleet>>{});
+      List<AirFleet> fleetsOf(String node) => enemyFleetCache[node] ??= [
             for (final c in byNode[node]!) enemyAirFleet(c, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo),
           ];
       int selectedOf(String node, List<AirFleet> fleets) {
@@ -253,7 +260,7 @@ class _AirViewState extends ConsumerState<AirView> {
       final List<String> battleNodes;
       List<String> route = const [];
       if (_route) {
-        final compass = simulateCompass(map, compassFleetOf(squad, admiralLevel: data.seaForceBase.admiral.level));
+        final compass = simulateCompassCached(map, compassFleetOf(squad, admiralLevel: data.seaForceBase.admiral.level));
         route = compass.likelyRoute;
         battleNodes = [for (final n in route) if (byNode.containsKey(n)) n];
       } else {
@@ -281,7 +288,13 @@ class _AirViewState extends ConsumerState<AirView> {
           if (!baseOn(b) || airBases[b.rid]!.squadrons.isEmpty) continue;
           (basesByBattle[battleNodes.indexOf(targetOf(b))] ??= []).add(airBases[b.rid]!);
         }
-        final results = simulateAirBattles(own, chosen, runs: kAirSimRuns, seed: 1, bases: basesByBattle);
+        final battleKey = [
+          own.key,
+          for (final f in chosen) f.key,
+          for (final e in basesByBattle.entries) '${e.key}:${e.value.map((b) => b.key).join('/')}',
+        ].join('#');
+        final results = _battles.get(
+            battleKey, () => simulateAirBattles(own, chosen, runs: kAirSimRuns, seed: 1, bases: basesByBattle));
         final shown = _route && battleNodes.contains(_node) ? _node! : (_route ? battleNodes.last : battleNodes.single);
         final index = battleNodes.indexOf(shown);
         final fleets = enemyFleets[shown]!;

@@ -89,6 +89,9 @@ class AirPlane {
     this.interception = 0,
   });
 
+  /// 計算結果を使い回すためのキー (中身が同じなら同じ文字列)
+  String get key => '$itemId,$category,$aa,$improvement,$proficiency,$interception';
+
   bool get isAirCombat => kAirCombatCategories.contains(category);
   bool get isAttacker => kAirAttackerCategories.contains(category);
   bool get isJet => kAirJetCategories.contains(category);
@@ -121,6 +124,8 @@ class AirSlot {
   final int count;
 
   const AirSlot(this.index, this.plane, this.count);
+
+  String get key => '$index:${plane.key}x$count';
 }
 
 /// 対空カットイン1種 (優先順位の高い順に判定する)
@@ -131,6 +136,8 @@ class AirAaci {
   final double rate;
 
   const AirAaci({required this.kind, required this.fixedBonus, required this.variableBonus, required this.rate});
+
+  String get key => '$kind,$fixedBonus,$variableBonus,$rate';
 }
 
 /// 艦隊の1隻
@@ -160,6 +167,9 @@ class AirShip {
   });
 
   bool get hasAttackers => slots.any((s) => s.plane.isAttacker && s.count > 0);
+
+  String get key => '$name,$shipType,$weightedAa,$fleetAaBonus,$submarine'
+      '[${slots.map((s) => s.key).join(';')}][${aaci.map((a) => a.key).join(';')}]';
 }
 
 /// 陣形 (api の番号) → 艦隊防空の陣形補正
@@ -193,6 +203,9 @@ class AirFleet {
   final bool enemy;
 
   const AirFleet(this.ships, {this.formation = 1, this.enemy = false});
+
+  /// 計算結果を使い回すためのキー (中身が同じなら同じ文字列)
+  String get key => '$formation,$enemy{${ships.map((s) => s.key).join('|')}}';
 
   /// 艦隊防空値 (味方は ×2/1.3、敵は ×2)
   double get fleetAa {
@@ -235,6 +248,8 @@ class AirBase {
   final double reconMultiplier;
 
   const AirBase(this.name, this.squadrons, {this.reconMultiplier = 1});
+
+  String get key => '$name,$reconMultiplier[${squadrons.map((s) => s.key).join(';')}]';
 }
 
 /// 基地航空隊 (出撃) の1中隊の制空値: (対空 + 迎撃×1.5 + 改修) × √機数 + 熟練度。偵察機も数える

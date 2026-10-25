@@ -78,6 +78,10 @@ class DamageEquip {
     this.slot = 0,
   });
 
+  /// 計算結果を使い回すためのキー (中身が同じなら同じ文字列)
+  String get key =>
+      '$itemId,$category,$icon,$firepower,$torpedo,$bombing,$asw,$los,$aa,$armor,$improvement,$proficiency,$count,$slot';
+
   bool get isMainGun => const {kDmgSmallGun, kDmgMediumGun, kDmgLargeGun, kDmgLargeGun2}.contains(category);
   bool get isSecondary => category == kDmgSecondary;
   bool get isTorpedo => category == kDmgTorpedo || category == kDmgSubTorpedo;
@@ -243,6 +247,10 @@ class DamageShip {
     this.nightCarrier = false,
   });
 
+  /// 計算結果を使い回すためのキー (中身が同じなら同じ文字列)
+  String get key => '$name,$shipId,$shipType,$level,$hp,$maxHp,$armor,$firepower,$torpedo,$asw,$nakedTorpedo,$nakedAsw,'
+      '$enemy,$installType,$supplyDepot,$pt,$nightCarrier[${equips.map((e) => e.key).join(';')}]';
+
   bool get submarine => shipType == kDmgSS || shipType == kDmgSSV;
   bool get carrier => shipType == kDmgCVL || shipType == kDmgCV || shipType == kDmgCVB;
   bool get installation => installType > 0;
@@ -331,6 +339,8 @@ class DamageConditions {
     this.nightContact = 0,
     this.bonus = 1,
   });
+
+  String get key => '${engagement.name},$formation,$ammo,$nightContact,$bonus';
 }
 
 /// 攻撃の種類

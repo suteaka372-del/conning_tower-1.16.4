@@ -1,11 +1,12 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/feature/kancolle/data.dart';
 import 'package:conning_tower/models/feature/kancolle/dev_stats.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_eo_tracker.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/providers/dev_stats_provider.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/local_navigator.dart';
+import 'package:conning_tower/utils/memo.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:flutter/cupertino.dart';
@@ -54,10 +55,11 @@ class DevItemListView extends ConsumerStatefulWidget {
 
 class _DevItemListViewState extends ConsumerState<DevItemListView> {
   String _query = '';
+  final _items = Memo<List<int>>();
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(kancolleDataProvider); // 装備名 (マスターデータ) が届いたら作り直す
+    watchKancolleData(ref, context); // 装備名 (マスターデータ) が届いたら作り直す
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(context),
       child: SafeArea(
@@ -66,7 +68,9 @@ class _DevItemListViewState extends ConsumerState<DevItemListView> {
           valueListenable: DevStatsLoader.revision,
           builder: (context, _, __) {
             final stats = DevStatsLoader.stats;
-            final items = stats == null ? const <int>[] : devItemsMatching(stats, _query);
+            // 統計は大きいので、統計・検索語・マスターデータが同じなら並べ直さない
+            final items =
+                stats == null ? const <int>[] : _items.of([stats, _query, questMasterData], () => devItemsMatching(stats, _query));
             return CupertinoScrollbar(
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 24),
@@ -185,11 +189,12 @@ class DevItemDetailPage extends ConsumerStatefulWidget {
 
 class _DevItemDetailPageState extends ConsumerState<DevItemDetailPage> {
   DevSort _sort = DevSort.rate;
+  final _suggestions = Memo<(List<DevSuggestion>, List<DevSuggestion>, List<DevSuggestion>)>();
 
   @override
   Widget build(BuildContext context) {
     final itemId = widget.itemId;
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final stats = DevStatsLoader.stats;
     final master = questMasterData;
     final owned = devOwnedShips(data);
@@ -205,11 +210,13 @@ class _DevItemDetailPageState extends ConsumerState<DevItemDetailPage> {
             : devSuggestions(stats, itemId,
                 groupOf: groupOf, sort: _sort, minTries: minTries, fallbackMinTries: fallback, limit: limit);
 
-    // 今の秘書艦 (第1艦隊の旗艦) だけの記録
-    final mine =
-        secretaryId == null ? const <DevSuggestion>[] : suggest((id) => id == secretaryId ? 0 : -1, 20, 5, limit: 5);
-    final byGroup = suggest((id) => devSecretaryGroup(master, id), 100, 20);
-    final byShip = suggest((id) => id, 50, 10);
+    // 統計は大きいので、条件が同じなら数え直さない
+    final (mine, byGroup, byShip) = _suggestions.of([stats, itemId, _sort, secretaryId, master], () => (
+          // 今の秘書艦 (第1艦隊の旗艦) だけの記録
+          secretaryId == null ? const <DevSuggestion>[] : suggest((id) => id == secretaryId ? 0 : -1, 20, 5, limit: 5),
+          suggest((id) => devSecretaryGroup(master, id), 100, 20),
+          suggest((id) => id, 50, 10),
+        ));
 
     Widget recipeTitle(DevRecipe r) => Text(
           repairText('燃${r.fuel} 弾${r.ammo} 鋼${r.steel} ボ${r.bauxite}', 'F${r.fuel} A${r.ammo} S${r.steel} B${r.bauxite}'),

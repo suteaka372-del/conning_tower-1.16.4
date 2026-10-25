@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/air/air_data.dart';
 import 'package:conning_tower/models/feature/kancolle/compass/compass_maps.dart';
@@ -5,7 +6,7 @@ import 'package:conning_tower/models/feature/kancolle/damage/damage_data.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/pages/dashboard_pages/air_sim_page.dart' show airPercent;
 import 'package:conning_tower/providers/air_data_provider.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
+import 'package:conning_tower/utils/memo.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76,8 +77,10 @@ class _DamageViewState extends ConsumerState<DamageView> {
   double _bonus = 1.0;
   late final TextEditingController _bonusController;
 
-  /// 計算結果の使い回し
-  final Map<String, (DamageOutcome, DamageOutcome)> _cache = {};
+  /// 計算結果の使い回し (ゲームのデータが届くたびに作り直すが、艦隊や敵が同じなら計算し直さない)
+  final _byNode = Memo<Map<String, List<EnemyComp>>>();
+  final _enemyData = Memo<Map<String, Object>>();
+  final _attacks = MemoCache<List<(DamageAttack, DamageOutcome, DamageOutcome)>>(128);
 
   @override
   void initState() {
@@ -177,7 +180,7 @@ class _DamageViewState extends ConsumerState<DamageView> {
   }
 
   Widget _build(BuildContext context) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final map = _map;
     final phases = compassMapsOf(_mapId);
     final phase = _phase.clamp(0, phases.length - 1);
@@ -297,18 +300,23 @@ class _DamageViewState extends ConsumerState<DamageView> {
               'The abyssal data is old. Run "Development stats" on GitHub Actions, then tap Reload.'),
           secondary));
     } else {
-      final byNode = enemyCompsByNode(comps);
+      final byNode = _byNode.of([comps], () => enemyCompsByNode(comps));
       final nodes = byNode.keys.toList()..sort((a, b) => a.length != b.length ? a.length.compareTo(b.length) : a.compareTo(b));
       if (nodes.isEmpty) {
         children.add(_message(repairText('この海域の敵編成の報告がありません', 'No enemy compositions reported for this map'), secondary));
       } else {
         final node = byNode.containsKey(_node) ? _node! : (byNode.containsKey(map.boss) ? map.boss : nodes.first);
         final nodeComps = byNode[node]!;
-        final airFleets = [for (final c in nodeComps) enemyAirFleet(c, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo)];
+        // 敵の艦隊はデータが同じなら作り直さない (マス・編成ごと)
+        final enemyData = _enemyData.of([byNode, abyssal, slotItems, shipInfo], () => <String, Object>{});
+        final airFleets = enemyData.putIfAbsent('air:$node', () => [
+              for (final c in nodeComps) enemyAirFleet(c, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo),
+            ]) as List<AirFleet>;
         var selected = nodeComps.indexWhere((c) => c.key == _compKeys[node]);
         if (selected < 0) selected = strongestEnemyComp(airFleets);
         final comp = nodeComps[selected];
-        final enemies = damageEnemyFleetOf(comp, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo);
+        final enemies = enemyData.putIfAbsent('dmg:$node:$selected',
+            () => damageEnemyFleetOf(comp, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo)) as List<DamageShip>;
         final own = damageFleetOf(squads[fleetIndex], full: !_current);
         final conditions = DamageConditions(engagement: _engagement, formation: _formation, ammo: _ammo, nightContact: _contact, bonus: _bonus);
         // 敵の攻撃: 陣形は敵編成のもの (連合艦隊の陣形は補正1.0)、弾薬は満タン、特効なし
@@ -445,19 +453,25 @@ class _DamageViewState extends ConsumerState<DamageView> {
         ]),
       );
 
-  (DamageOutcome, DamageOutcome) _outcome(DamageAttack attack, DamageShip target, DamageConditions c, {bool stopper = false}) {
-    final key = '${attack.normal}|${attack.critical}|${attack.armorReduction}|${target.hp}|${target.maxHp}|${target.armor}|${c.ammo}|$stopper';
-    if (_cache.length > 4000) _cache.clear();
-    return _cache[key] ??= damageAttackOutcome(attack, target, c, stopper: stopper);
-  }
+  /// [ship] が [target] にできる攻撃と、当たったときの結果 (通常・クリティカル)
+  List<(DamageAttack, DamageOutcome, DamageOutcome)> _results(DamageShip ship, DamageShip target, DamageConditions c,
+          {bool stopper = false}) =>
+      _attacks.get('${ship.key}>${target.key}|${c.key}|$stopper', () {
+        return [
+          for (final attack in damageAllAttacks(ship, target, c))
+            () {
+              final (normal, critical) = damageAttackOutcome(attack, target, c, stopper: stopper);
+              return (attack, normal, critical);
+            }(),
+        ];
+      });
 
   /// [attackers] の攻撃のうち、[target] を一番撃沈・大破させやすいもの (通常の命中)
   ((double, String), (double, String)) _best(List<DamageShip> attackers, DamageShip target, DamageConditions c, {bool stopper = false}) {
     var bestSink = (0.0, '');
     var bestHeavy = (0.0, '');
     for (final ship in attackers) {
-      for (final attack in damageAllAttacks(ship, target, c)) {
-        final (normal, _) = _outcome(attack, target, c, stopper: stopper);
+      for (final (attack, normal, _) in _results(ship, target, c, stopper: stopper)) {
         final label = '${ship.name} ${repairText(attack.ja, attack.en)}';
         if (normal.sink > bestSink.$1) bestSink = (normal.sink, label);
         if (normal.heavyOrWorse > bestHeavy.$1) bestHeavy = (normal.heavyOrWorse, label);
@@ -524,7 +538,7 @@ class _DamageViewState extends ConsumerState<DamageView> {
 
   /// 1隻の攻撃と、狙う艦に当たったときの結果
   Widget _shipSection(DamageShip ship, DamageShip target, DamageConditions c, TextStyle secondary, {bool stopper = false}) {
-    final attacks = damageAllAttacks(ship, target, c);
+    final attacks = _results(ship, target, c, stopper: stopper);
     final ground = !ship.enemy && (target.installation || target.supplyDepot);
     return QuestDetailSection(
       title: repairText('${ship.name} → ${target.name}', '${ship.name} → ${target.name}'),
@@ -553,9 +567,8 @@ class _DamageViewState extends ConsumerState<DamageView> {
               style: secondary,
             ),
           ),
-        for (final attack in attacks)
+        for (final (attack, normal, critical) in attacks)
           () {
-            final (normal, critical) = _outcome(attack, target, c, stopper: stopper);
             return CupertinoListTile(
               title: Text(repairText(attack.ja, attack.en), style: const TextStyle(fontSize: 14)),
               subtitle: Text(

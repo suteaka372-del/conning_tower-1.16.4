@@ -1,5 +1,5 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/models/data/ooyodo/equipment_type.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -71,9 +71,9 @@ class _KancolleItemViewerState extends ConsumerState<KancolleItemViewer> {
   @override
   Widget build(BuildContext context) {
     final collections =
-        ref.watch(kancolleDataProvider).fleet.equipmentCollections;
+        watchKancolleData(ref, context).fleet.equipmentCollections;
     equipmentTypeNameMap =
-        ref.watch(kancolleDataProvider).dataInfo.equipmentTypeNameMap;
+        watchKancolleData(ref, context).dataInfo.equipmentTypeNameMap;
     Locale locale = Localizations.localeOf(context);
     final l10n = ref.watch(kancolleLocalizationProvider(locale));
     final l10nData = l10n.whenData((data) => data.data).value;

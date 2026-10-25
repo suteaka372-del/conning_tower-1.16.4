@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_assistant.dart';
 import 'package:conning_tower/models/feature/kancolle/quest_fleet_condition.dart';
@@ -213,7 +214,7 @@ class QuestDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final treeAsync = ref.watch(questTreeProvider);
     final tree = treeAsync.valueOrNull;
     final treeProgress = ref.watch(questTreeProgressProvider);

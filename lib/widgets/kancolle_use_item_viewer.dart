@@ -1,3 +1,4 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
@@ -5,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../generated/l10n.dart';
 import '../models/data/kcsapi/kcsapi.dart';
-import '../providers/kancolle_data_provider.dart';
 
 const _useItemOrder = [68, 96, 61];
 
@@ -57,7 +57,7 @@ class KancolleUseItemViewer extends ConsumerStatefulWidget {
 class _KancolleUseItemViewerState extends ConsumerState<KancolleUseItemViewer> {
   @override
   Widget build(BuildContext context) {
-    var data = ref.watch(kancolleDataProvider);
+    var data = watchKancolleData(ref, context);
 
     List<UseItemMessage> messages = [];
 

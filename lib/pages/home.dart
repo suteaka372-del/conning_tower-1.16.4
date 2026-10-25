@@ -7,6 +7,8 @@ import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/perf_monitor.dart';
+import 'package:flutter/foundation.dart';
 import 'package:conning_tower/models/data/kcwiki/kcwiki_data.dart';
 import 'package:conning_tower/models/feature/kancolle/data.dart';
 import 'package:conning_tower/models/feature/kancolle/raw_data.dart';
@@ -50,6 +52,7 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class HomePageState extends ConsumerState<HomePage> {
+  late final AppLifecycleListener _lifecycle;
   late Alignment fabAlignment;
   late bool showControls;
 
@@ -93,6 +96,10 @@ class HomePageState extends ConsumerState<HomePage> {
     } catch (_) {}
 
     _initPackageInfo();
+    // 動作の重さの計測 (設定の「動作の重さ」で見られる)
+    PerfMonitor.instance.start();
+    // 任務の進捗はまとめて保存しているので、アプリが裏に回るときに書き出す
+    _lifecycle = AppLifecycleListener(onInactive: KancolleData.flushQuestProgress, onHide: KancolleData.flushQuestProgress);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(seconds: 1));
@@ -102,6 +109,8 @@ class HomePageState extends ConsumerState<HomePage> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
+    KancolleData.flushQuestProgress();
     super.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   }
@@ -252,13 +261,17 @@ class HomePageState extends ConsumerState<HomePage> {
     });
 
     ref.listen(rawDataProvider, (previous, RawData next) {
-      debugPrint('listen.rawDataProvider');
-      log(next.source);
-      log(next.params.toString());
-      log(next.data);
-      ref
-          .watch(kancolleDataProvider.notifier)
-          .update((state) => state.parseWith(next));
+      // 届いたデータの中身 (大きいものは数百KB) を毎回書き出すと重いので、開発中だけ
+      if (kDebugMode) {
+        log(next.source);
+        log(next.params.toString());
+        log(next.data);
+      }
+      PerfMonitor.instance.measureApi(next.source.split('kcsapi').last, () {
+        ref
+            .read(kancolleDataProvider.notifier)
+            .update((state) => state.parseWith(next));
+      });
     });
 
     ref.listen(kancolleDataProvider,

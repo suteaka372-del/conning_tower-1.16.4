@@ -1,10 +1,10 @@
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/data/kcsapi/start2/get_data_entity.dart';
 import 'package:conning_tower/models/feature/kancolle/expedition_check.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/models/feature/kancolle/squad.dart';
-import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
@@ -89,7 +89,7 @@ class ExpeditionCheckSliver extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final missionInfo = data.dataInfo.missionInfo;
     final secondaryStyle = TextStyle(
       fontSize: 12,
@@ -265,7 +265,7 @@ class ExpeditionDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(kancolleDataProvider);
+    final data = watchKancolleData(ref, context);
     final mission = data.dataInfo.missionInfo?[missionId];
     final secondaryStyle = TextStyle(
       fontSize: 12,
