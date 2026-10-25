@@ -33,6 +33,8 @@ import 'raw_data.dart';
 import 'quest_eo_tracker.dart';
 import 'quest_fleet_condition.dart';
 import 'quest_progress.dart';
+import 'compass/compass_log.dart';
+import 'compass/compass_maps.dart';
 import 'repair_timer.dart';
 import 'sea_force_base.dart';
 import 'ship.dart';
@@ -827,12 +829,25 @@ class KancolleData {
             tracker.sortieFleet = _intOf(params?['api_deck_id']);
             tracker.onSortieStart();
           }
+          final mapId = (_intOf(apiData['api_maparea_id']) ?? 0) * 10 + (_intOf(apiData['api_mapinfo_no']) ?? 0);
           tracker.onMapPoint(
-            mapId: (_intOf(apiData['api_maparea_id']) ?? 0) * 10 + (_intOf(apiData['api_mapinfo_no']) ?? 0),
+            mapId: mapId,
             eventId: _intOf(apiData['api_event_id']) ?? 0,
             isEndPoint: _intOf(apiData['api_next']) == 0,
             cell: _intOf(apiData['api_no']),
             fleet: questFleet(tracker.sortieFleet),
+          );
+          // 羅針盤シミュレーターの答え合わせ用 (進んだマスと予測を記録)
+          compassRecorder.onMapPoint(
+            mapId: mapId,
+            cell: _intOf(apiData['api_no']),
+            start: path == '/api_req_map/start',
+            fleet: () {
+              final deck = (tracker.sortieFleet ?? 1).clamp(1, squads.isEmpty ? 1 : squads.length);
+              return squads.isEmpty
+                  ? CompassFleet(const [])
+                  : compassFleetOf(squads[deck - 1], admiralLevel: seaForceBase.admiral.level);
+            },
           );
         case '/api_req_sortie/battleresult' || '/api_req_combined_battle/battleresult':
           if (apiData is! Map) return;
