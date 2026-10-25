@@ -173,14 +173,22 @@ String devOwnedText(List<DevOwnedShip> ships) {
   return repairText('持っている艦: $names$more', 'Yours: $names$more');
 }
 
-/// 装備1つの詳細: 出やすいレシピ × 秘書艦 (艦種別・艦娘別)
-class DevItemDetailPage extends ConsumerWidget {
+/// 装備1つの詳細: 出やすいレシピ × 秘書艦 (今の秘書艦・艦種別・艦娘別)
+class DevItemDetailPage extends ConsumerStatefulWidget {
   const DevItemDetailPage({super.key, required this.itemId});
 
   final int itemId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DevItemDetailPage> createState() => _DevItemDetailPageState();
+}
+
+class _DevItemDetailPageState extends ConsumerState<DevItemDetailPage> {
+  DevSort _sort = DevSort.rate;
+
+  @override
+  Widget build(BuildContext context) {
+    final itemId = widget.itemId;
     final data = ref.watch(kancolleDataProvider);
     final stats = DevStatsLoader.stats;
     final master = questMasterData;
@@ -191,25 +199,42 @@ class DevItemDetailPage extends ConsumerWidget {
     final secretaryGroup = secretaryId == null ? -1 : devSecretaryGroup(master, secretaryId);
     final secondary = TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel.resolveFrom(context));
 
-    final byGroup = stats == null
-        ? const <DevSuggestion>[]
-        : devSuggestions(stats, itemId, groupOf: (id) => devSecretaryGroup(master, id));
-    final byShip = stats == null
-        ? const <DevSuggestion>[]
-        : devSuggestions(stats, itemId, groupOf: (id) => id, minTries: 30, fallbackMinTries: 10);
+    List<DevSuggestion> suggest(int Function(int) groupOf, int minTries, int fallback, {int limit = 10}) =>
+        stats == null
+            ? const <DevSuggestion>[]
+            : devSuggestions(stats, itemId,
+                groupOf: groupOf, sort: _sort, minTries: minTries, fallbackMinTries: fallback, limit: limit);
+
+    // 今の秘書艦 (第1艦隊の旗艦) だけの記録
+    final mine =
+        secretaryId == null ? const <DevSuggestion>[] : suggest((id) => id == secretaryId ? 0 : -1, 20, 5, limit: 5);
+    final byGroup = suggest((id) => devSecretaryGroup(master, id), 100, 20);
+    final byShip = suggest((id) => id, 50, 10);
 
     Widget recipeTitle(DevRecipe r) => Text(
           repairText('燃${r.fuel} 弾${r.ammo} 鋼${r.steel} ボ${r.bauxite}', 'F${r.fuel} A${r.ammo} S${r.steel} B${r.bauxite}'),
           style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
         );
-    Widget rate(DevSuggestion s) => Column(
+    // 右側の大きい数字は、選んでいる並べ方の値
+    Widget value(DevSuggestion s) => Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(devRateText(s.rate), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+            Text(
+              switch (_sort) {
+                DevSort.rate => devRateText(s.rate),
+                DevSort.nails => devNailsText(s.nailsPerItem),
+                DevSort.resources => devResourcesText(s.resourcesPerItem),
+              },
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            ),
             Text(repairText('${s.hits}/${s.tries}回', '${s.hits}/${s.tries}'), style: secondary),
           ],
         );
+    String metrics(DevSuggestion s) => repairText(
+        '出る${devRateText(s.rate)}・成功${devRateText(s.successRate)}・1個あたり 釘${devNailsText(s.nailsPerItem)} 資材${devResourcesText(s.resourcesPerItem)}',
+        '${devRateText(s.rate)}, success ${devRateText(s.successRate)}, per item: nails ${devNailsText(s.nailsPerItem)}, resources ${devResourcesText(s.resourcesPerItem)}');
+    Widget empty() => CupertinoListTile(title: Text(repairText('データがありません', 'No data')));
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(context),
@@ -224,48 +249,72 @@ class DevItemDetailPage extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.only(bottom: 24),
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                child: CupertinoSlidingSegmentedControl<DevSort>(
+                  groupValue: _sort,
+                  onValueChanged: (value) {
+                    if (value != null) setState(() => _sort = value);
+                  },
+                  children: {
+                    DevSort.rate: Text(repairText('確率の高い順', 'Best rate')),
+                    DevSort.nails: Text(repairText('釘の少ない順', 'Fewest nails')),
+                    DevSort.resources: Text(repairText('資材の少ない順', 'Fewest resources')),
+                  },
+                ),
+              ),
               if (secretaryId != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                  child: Text(
-                      repairText('今の秘書艦: ${questShipName(secretaryId)} (${devSecretaryGroupName(secretaryGroup)})',
-                          'Secretary: ${questShipName(secretaryId)} (${devSecretaryGroupName(secretaryGroup)})'),
-                      style: secondary),
+                QuestDetailSection(
+                  title: repairText('今の秘書艦なら: ${questShipName(secretaryId)} (${devSecretaryGroupName(secretaryGroup)})',
+                      'With your secretary: ${questShipName(secretaryId)}'),
+                  footer: repairText('第1艦隊の旗艦で開発したときの記録', 'Records with your fleet 1 flagship as secretary'),
+                  children: [
+                    if (mine.isEmpty)
+                      CupertinoListTile(
+                          title: Text(repairText('この秘書艦で出た記録がありません', 'No records with this secretary'))),
+                    for (final s in mine)
+                      CupertinoListTile(
+                        title: recipeTitle(s.recipe),
+                        subtitle: Text(metrics(s), maxLines: 2),
+                        additionalInfo: value(s),
+                      ),
+                  ],
                 ),
               QuestDetailSection(
                 title: repairText('おすすめ (秘書艦の艦種別)', 'Best recipes by secretary type'),
-                footer: repairText('出やすさ (試行回数も考えた控えめな見積もり) の順。艦種と国籍で分けています',
-                    'Sorted by a conservative estimate that accounts for the number of tries'),
+                footer: repairText('試行100回以上。艦種と国籍で分けています。釘は開発に成功したときだけ減る (ペンギンでは減らない) として計算',
+                    '100+ tries. Grouped by ship type and nationality. Nails are used only on success'),
                 children: [
-                  if (byGroup.isEmpty)
-                    CupertinoListTile(title: Text(repairText('データがありません', 'No data'))),
+                  if (byGroup.isEmpty) empty(),
                   for (final s in byGroup)
                     CupertinoListTile(
                       title: recipeTitle(s.recipe),
                       subtitle: Text(
                         '${repairText('秘書艦', 'Secretary')}: ${devSecretaryGroupName(s.group)}'
                         '${s.group == secretaryGroup ? repairText(' ← 今の秘書艦', ' (current)') : ''}\n'
+                        '${metrics(s)}\n'
                         '${devOwnedText([for (final o in owned) if (devSecretaryGroup(master, o.shipId) == s.group) o])}',
-                        maxLines: 2,
+                        maxLines: 4,
                       ),
-                      additionalInfo: rate(s),
+                      additionalInfo: value(s),
                     ),
                 ],
               ),
               QuestDetailSection(
                 title: repairText('艦娘別', 'By ship'),
-                footer: repairText('秘書艦1隻ごとの記録 (試行回数が少ないものは除く)。✓ は持っている艦',
-                    'Per secretary ship (few tries excluded). ✓ = you have it'),
+                footer: repairText('秘書艦1隻ごとの記録 (試行50回以上)。✓ は持っている艦', 'Per secretary ship (50+ tries). ✓ = you have it'),
                 children: [
-                  if (byShip.isEmpty)
-                    CupertinoListTile(title: Text(repairText('データがありません', 'No data'))),
+                  if (byShip.isEmpty) empty(),
                   for (final s in byShip)
                     CupertinoListTile(
                       title: recipeTitle(s.recipe),
                       subtitle: Text(
-                          '${questShipName(s.group)}${owned.any((o) => o.shipId == s.group) ? ' ✓' : ''}'
-                          '${s.group == secretaryId ? repairText(' ← 今の秘書艦', ' (current)') : ''}'),
-                      additionalInfo: rate(s),
+                        '${questShipName(s.group)}${owned.any((o) => o.shipId == s.group) ? ' ✓' : ''}'
+                        '${s.group == secretaryId ? repairText(' ← 今の秘書艦', ' (current)') : ''}\n'
+                        '${metrics(s)}',
+                        maxLines: 3,
+                      ),
+                      additionalInfo: value(s),
                     ),
                 ],
               ),
@@ -273,7 +322,7 @@ class DevItemDetailPage extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                 child: Text(
                   '${DevStatsLoader.statusText(text: repairText)}\n'
-                  '${repairText('poi・KC3改・Kcanotify の利用者が報告した開発結果を集計したものです。確率は報告された結果の割合で、試行回数が少ないとぶれます。', 'Aggregated from development results reported by poi, KC3Kai and Kcanotify users. Rates are observed shares and vary when tries are few.')}',
+                  '${repairText('poi・KC3改・Kcanotify の利用者が報告した開発結果を集計したものです。確率は報告された結果の割合で、試行回数が少ないとぶれます。並べ替えは試行回数も考えた控えめな見積もりで行っています。', 'Aggregated from development results reported by poi, KC3Kai and Kcanotify users. Rates are observed shares and vary when tries are few. Sorting uses a conservative estimate that accounts for the number of tries.')}',
                   style: secondary,
                 ),
               ),

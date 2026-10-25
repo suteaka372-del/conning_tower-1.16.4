@@ -63,7 +63,8 @@ const _json = '''
  [20,60,10,110,83,100,[22,10]],
  [20,60,10,110,84,81,[22,8]],
  [40,60,10,100,83,1,[22,1]],
- [20,60,10,110,900,60,[900,12,22,1]],
+ [20,60,10,110,900,120,[900,24,22,2]],
+ [20,40,10,40,83,200,[22,30,1,100]],
  [10,10,10,10,9,500,[2,150]],
  [10,10,10,10,83,40,[]],
  "broken",
@@ -77,9 +78,9 @@ void main() {
     final stats = DevStats.parse(_json);
     expect(stats.months, ['2026-09', '2026-10']);
     expect(stats.generated, DateTime.utc(2026, 10, 24, 17));
-    expect(stats.rows.length, 6);
-    expect(stats.totalTries, 100 + 81 + 1 + 60 + 500 + 40);
-    expect(stats.itemHits, {_reppu: 10 + 8 + 1 + 1, _f6f: 12, _gun: 150});
+    expect(stats.rows.length, 7);
+    expect(stats.totalTries, 100 + 81 + 1 + 120 + 200 + 500 + 40);
+    expect(stats.itemHits, {_reppu: 10 + 8 + 1 + 2 + 30, _f6f: 24, _gun: 150, 1: 100});
     expect(stats.rows.first.recipe, const DevRecipe(20, 60, 10, 110));
   });
 
@@ -97,13 +98,32 @@ void main() {
     final stats = DevStats.parse(_json);
     final byGroup = devSuggestions(stats, _reppu, groupOf: (id) => devSecretaryGroup(_master, id));
     // 赤城と加賀は同じ「正規空母 (日本)」にまとまる。1回だけの記録は試行回数が足りないので出ない
-    expect(byGroup.first.recipe, const DevRecipe(20, 60, 10, 110));
-    expect(byGroup.first.group, 1101);
-    expect(byGroup.first.tries, 181);
-    expect(byGroup.first.hits, 18);
-    expect(byGroup.map((s) => s.recipe), isNot(contains(const DevRecipe(40, 60, 10, 100))));
+    expect(byGroup.map((s) => (s.recipe.text, s.group, s.hits, s.tries)), [
+      ('20/40/10/40', 1101, 30, 200),
+      ('20/60/10/110', 1101, 18, 181),
+      ('20/60/10/110', 1104, 2, 120),
+    ]);
     expect(devSecretaryGroupName(1101), '正規空母');
-    expect(devSecretaryGroupName(byGroup[1].group), '正規空母 (アメリカ)');
+    expect(devSecretaryGroupName(1104), '正規空母 (アメリカ)');
+
+    // 釘と資材: 釘は成功したときだけ減る。20/40/10/40 は他の装備もよく出るので、烈風1個あたりの釘は多い
+    final cheap = byGroup.first;
+    expect(cheap.successes, 130);
+    expect(devRateText(cheap.successRate), '65%');
+    expect(cheap.nailsPerItem, closeTo(130 / 30, 1e-9));
+    expect(cheap.resourcesPerItem, closeTo(110 * 200 / 30, 1e-9));
+    expect(devNailsText(cheap.nailsPerItem), '4.3本');
+    expect(devResourcesText(cheap.resourcesPerItem), '733');
+    expect(byGroup[1].nailsPerItem, 1.0);
+
+    // 並べ方
+    String order(DevSort sort) =>
+        devSuggestions(stats, _reppu, groupOf: (id) => devSecretaryGroup(_master, id), sort: sort)
+            .map((s) => '${s.recipe.text}@${s.group}')
+            .join(' ');
+    expect(order(DevSort.rate), '20/40/10/40@1101 20/60/10/110@1101 20/60/10/110@1104');
+    expect(order(DevSort.nails), '20/60/10/110@1101 20/40/10/40@1101 20/60/10/110@1104');
+    expect(order(DevSort.resources), '20/40/10/40@1101 20/60/10/110@1101 20/60/10/110@1104');
 
     // 海外の艦上戦闘機はアメリカの空母で
     final f6f = devSuggestions(stats, _f6f, groupOf: (id) => devSecretaryGroup(_master, id));
@@ -112,7 +132,7 @@ void main() {
 
     // 艦娘別: 試行回数の足りないものは除く
     final byShip = devSuggestions(stats, _reppu, groupOf: (id) => id, minTries: 30);
-    expect(byShip.map((s) => s.group), [_akagi, _kaga, _intrepid]);
+    expect(byShip.map((s) => s.recipe.text), ['20/40/10/40', '20/60/10/110', '20/60/10/110', '20/60/10/110']);
     expect(devRateText(byShip.last.rate), '1.7%');
 
     // 数が少ない装備は、条件を下げて出す
@@ -123,7 +143,7 @@ void main() {
   test('equipment list: filter by name, sorted by kind', () {
     questMasterData = _master;
     final stats = DevStats.parse(_json);
-    expect(devItemsMatching(stats, ''), [_gun, _reppu, _f6f]);
+    expect(devItemsMatching(stats, ''), [_gun, _reppu, _f6f, 1]); // マスターに無い装備は最後
     expect(devItemsMatching(stats, '烈'), [_reppu]);
     expect(devItemsMatching(stats, 'f6f'), [_f6f]);
     expect(devItemsMatching(stats, 'なし'), isEmpty);
@@ -192,15 +212,22 @@ void main() {
     await tester.pump();
 
     expect(find.text('烈風'), findsOneWidget);
-    expect(find.text('今の秘書艦: 吹雪 (駆逐)'), findsOneWidget);
-    expect(find.text('燃20 弾60 鋼10 ボ110'), findsWidgets);
-    expect(find.text('10%'), findsOneWidget); // 正規空母 18/181
-    expect(find.text('18/181回'), findsOneWidget);
-    expect(find.textContaining('持っている艦: 加賀 Lv99'), findsOneWidget);
+    // 吹雪で烈風が出た記録はない
+    expect(find.text('今の秘書艦なら: 吹雪 (駆逐)'), findsOneWidget);
+    expect(find.text('この秘書艦で出た記録がありません'), findsOneWidget);
+    expect(find.text('燃20 弾40 鋼10 ボ40'), findsWidgets);
+    expect(find.text('18/181回'), findsOneWidget); // 正規空母 (日本) 20/60/10/110
+    expect(find.textContaining('出る15%・成功65%・1個あたり 釘4.3本 資材733'), findsWidgets);
+    expect(find.textContaining('持っている艦: 加賀 Lv99'), findsNWidgets(2));
     expect(find.textContaining('持っている艦: なし'), findsOneWidget); // アメリカの空母
-    expect(find.text('加賀 ✓'), findsOneWidget);
-    expect(find.text('赤城'), findsOneWidget);
+    expect(find.textContaining('加賀 ✓'), findsOneWidget);
+    expect(find.textContaining('赤城\n'), findsNWidgets(2));
     expect(find.textContaining('poi の統計 2026-09〜2026-10'), findsOneWidget);
+
+    // 釘の少ない順にすると、右の数字が釘の本数になる
+    await tester.tap(find.text('釘の少ない順'));
+    await tester.pumpAndSettle();
+    expect(find.text('1.0本'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 

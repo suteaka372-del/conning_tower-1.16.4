@@ -112,6 +112,24 @@ class DevStats {
 /// [DevStats.parse] を別の Isolate で呼ぶため (compute) の入口
 DevStats parseDevStats(String text) => DevStats.parse(text);
 
+/// おすすめの並べ方
+enum DevSort {
+  /// 目的の装備が出る確率の高い順
+  rate,
+
+  /// 1個出すまでに使う釘 (開発資材) の少ない順
+  nails,
+
+  /// 1個出すまでに使う資材 (燃料+弾薬+鋼材+ボーキ) の少ない順
+  resources;
+
+  String get label => switch (this) {
+        rate => repairText('確率', 'Rate'),
+        nails => repairText('釘', 'Nails'),
+        resources => repairText('資材', 'Resources'),
+      };
+}
+
 /// おすすめ1件 (レシピ × 秘書艦のまとまり)
 class DevSuggestion {
   final DevRecipe recipe;
@@ -119,14 +137,46 @@ class DevSuggestion {
   /// まとまりの番号 (艦種別なら [devSecretaryGroup]、艦娘別なら艦ID)
   final int group;
   final int tries;
+
+  /// 目的の装備が出た回数
   final int hits;
 
-  const DevSuggestion({required this.recipe, required this.group, required this.tries, required this.hits});
+  /// 開発に成功した回数 (何かの装備が出た回数。失敗はペンギン)
+  final int successes;
+
+  const DevSuggestion({
+    required this.recipe,
+    required this.group,
+    required this.tries,
+    required this.hits,
+    required this.successes,
+  });
 
   double get rate => tries == 0 ? 0 : hits / tries;
 
-  /// 並べ替えに使う、確率の控えめな見積もり (95% の Wilson 下限)。試行回数が少ないものを上に来にくくする
+  double get successRate => tries == 0 ? 0 : successes / tries;
+
+  /// 1回に使う資材 (失敗しても減る)
+  int get cost => recipe.fuel + recipe.ammo + recipe.steel + recipe.bauxite;
+
+  /// 目的の装備1個を出すまでに使う釘の見込み。釘は開発に成功したときだけ1本減る (失敗では減らない)
+  double get nailsPerItem => hits == 0 ? double.infinity : successes / hits;
+
+  /// 目的の装備1個を出すまでに使う資材の見込み
+  double get resourcesPerItem => hits == 0 ? double.infinity : cost * tries / hits;
+
+  /// 確率の控えめな見積もり (95% の Wilson 下限)。試行回数が少ないものを上に来にくくする
   double get score => wilsonLowerBound(hits, tries);
+
+  /// 並べ替えの値 (小さいほど上)。釘・資材も控えめな確率で見積もる
+  double sortKey(DevSort sort) {
+    final low = score;
+    return switch (sort) {
+      DevSort.rate => -low,
+      DevSort.nails => low <= 0 ? double.infinity : successRate / low,
+      DevSort.resources => low <= 0 ? double.infinity : cost / low,
+    };
+  }
 }
 
 double wilsonLowerBound(int hits, int tries) {
@@ -139,30 +189,39 @@ double wilsonLowerBound(int hits, int tries) {
   return max(0, (center - margin) / (1 + z * z / n)); // 0回のとき計算の誤差でわずかに負になるため
 }
 
-/// [itemId] がよく出るレシピ × 秘書艦のまとまり ([groupOf] で決める。-1 は数えない) を、出やすい順に。
-/// 試行回数が [minTries] 未満のものは除く (足りなければ [fallbackMinTries] まで下げる)
+/// [itemId] が出たレシピ × 秘書艦のまとまり ([groupOf] で決める。-1 は数えない) を [sort] の順に。
+/// 試行回数が [minTries] 未満のものは除く (たまたま高く出たものが上に来ないように。
+/// 1件も残らなければ [fallbackMinTries] まで下げる)
 List<DevSuggestion> devSuggestions(
   DevStats stats,
   int itemId, {
   required int Function(int secretary) groupOf,
-  int minTries = 20,
-  int fallbackMinTries = 5,
+  DevSort sort = DevSort.rate,
+  int minTries = 100,
+  int fallbackMinTries = 20,
   int limit = 10,
 }) {
   final tries = <(DevRecipe, int), int>{};
+  final successes = <(DevRecipe, int), int>{};
   final hits = <(DevRecipe, int), int>{};
   for (final row in stats.rows) {
     final group = groupOf(row.secretary);
     if (group < 0) continue;
     final key = (row.recipe, group);
     tries[key] = (tries[key] ?? 0) + row.tries;
+    var success = 0;
+    for (final count in row.hits.values) {
+      success += count;
+    }
+    successes[key] = (successes[key] ?? 0) + success;
     final hit = row.hits[itemId];
     if (hit != null) hits[key] = (hits[key] ?? 0) + hit;
   }
   List<DevSuggestion> pick(int min) => [
         for (final MapEntry(key: key, value: hit) in hits.entries)
-          if (tries[key]! >= min) DevSuggestion(recipe: key.$1, group: key.$2, tries: tries[key]!, hits: hit),
-      ]..sort((a, b) => b.score.compareTo(a.score));
+          if (tries[key]! >= min)
+            DevSuggestion(recipe: key.$1, group: key.$2, tries: tries[key]!, hits: hit, successes: successes[key]!),
+      ]..sort((a, b) => a.sortKey(sort).compareTo(b.sortKey(sort)));
   var list = pick(minTries);
   if (list.isEmpty) list = pick(fallbackMinTries);
   return list.take(limit).toList();
@@ -189,3 +248,9 @@ String devSecretaryGroupName(int group) {
 
 /// 割合の表示 (18.2%)
 String devRateText(double rate) => '${(rate * 100).toStringAsFixed(rate >= 0.1 ? 0 : 1)}%';
+
+/// 釘の見込みの表示 (7.2本)
+String devNailsText(double nails) => nails.isFinite ? repairText('${nails.toStringAsFixed(1)}本', nails.toStringAsFixed(1)) : '-';
+
+/// 資材の見込みの表示 (1404)
+String devResourcesText(double resources) => resources.isFinite ? resources.round().toString() : '-';
