@@ -125,7 +125,7 @@ void main() {
 
     expect(find.text('ダメージシミュレーター'), findsOneWidget);
     expect(find.text('1 空母ヲ級flagship (96)'), findsOneWidget);
-    expect(find.text('1回の攻撃で撃沈・大破できるか (通常の命中・昼戦)'), findsOneWidget);
+    expect(find.text('1回の攻撃で撃沈・大破できるか (通常の命中)'), findsOneWidget);
     // 砲撃 135 (徹甲弾なし) vs 装甲80: 防御 56〜103.4 → 31〜79
     expect(find.textContaining('31〜79 →'), findsWidgets);
     expect(find.text('榛名改二 → 空母ヲ級flagship'), findsOneWidget);
@@ -138,10 +138,34 @@ void main() {
     expect(find.text('榛名改二 → 駆逐イ級'), findsOneWidget);
     expect(find.textContaining('撃沈 100%'), findsWidgets);
 
+    // 夜戦の攻撃も並ぶ (主砲2つなので連撃)
+    expect(find.text('夜戦 通常'), findsOneWidget);
+    expect(find.text('夜戦 連撃 ×1.2×2'), findsOneWidget);
+
     // 反航戦にすると攻撃力が下がる
     await tester.tap(find.text('反航戦'));
     await tester.pumpAndSettle();
     expect(localStorage.getInt('dmg_engagement'), 1);
+
+    // 特効の倍率 (自分 → 敵)
+    await tester.tap(find.text('1 空母ヲ級flagship (96)'));
+    await tester.pumpAndSettle();
+    final before = tester.widgetList<Text>(find.textContaining('→ ')).map((t) => t.data).join('|');
+    await tester.enterText(find.byType(CupertinoTextField), '1.5');
+    await tester.pumpAndSettle();
+    expect(localStorage.getDouble('dmg_bonus'), 1.5);
+    final after = tester.widgetList<Text>(find.textContaining('→ ')).map((t) => t.data).join('|');
+    expect(after, isNot(before));
+
+    // 敵 → 自分: ヲ級の攻撃が榛名に当たったら (旗艦なので沈まない)
+    await tester.tap(find.text('敵 → 自分'));
+    await tester.pumpAndSettle();
+    expect(find.text('敵の攻撃1回で大破するか (通常の命中)'), findsOneWidget);
+    expect(find.text('1 榛名改二 (82/82)'), findsOneWidget);
+    expect(find.text('空母ヲ級flagship → 榛名改二'), findsOneWidget);
+    expect(find.textContaining('→ 撃沈'), findsNothing);
+    expect(find.textContaining('撃沈 最大'), findsNothing);
+    expect(localStorage.getBool('dmg_reverse'), isTrue);
     expect(tester.takeException(), isNull);
   });
 }

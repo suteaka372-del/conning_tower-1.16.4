@@ -175,6 +175,9 @@ const kDmgDepthChargeProjectors = {44, 45, 287, 288, 377, 472, 569};
 /// 迫撃砲
 const kDmgMortars = {346, 347};
 
+/// 対潜攻撃で装備対潜として数えない装備 (水偵・水戦・艦戦・飛行艇・電探・小口径主砲)
+const kDmgAswIgnored = {kDmgSeaplaneRecon, kDmgSeaplaneFighter, kDmgFighter, kDmgFlyingBoat, kDmgSmallRadar, kDmgLargeRadar, kDmgLargeRadar2, kDmgSmallGun};
+
 /// 敵潜水艦の装甲を減らす対潜兵装
 const kDmgArmorBreakers = {226, 227, 488, 439, 378, 377, 472};
 
@@ -344,6 +347,9 @@ class DamageAttack {
   /// クリティカルのとき
   final List<(double, List<double>)> critical;
 
+  /// 相手の装甲を減らす量 (爆雷の装甲減少補正)
+  final double armorReduction;
+
   const DamageAttack({
     required this.kind,
     required this.ja,
@@ -351,7 +357,10 @@ class DamageAttack {
     required this.phase,
     required this.normal,
     required this.critical,
+    this.armorReduction = 0,
   });
+
+  bool get night => phase == DamagePhase.night;
 }
 
 /// 熟練度クリティカル補正 (空母の砲撃・航空攻撃・艦載機の対潜)。[only] を指定するとそのスロットだけ
@@ -564,7 +573,267 @@ List<DamageAttack> damageDayAttacks(DamageShip a, DamageShip t, DamageConditions
 
 /// [attack] を [t] に当てたときの結果 (通常とクリティカル)。[stopper] は轟沈ストッパー
 (DamageOutcome, DamageOutcome) damageAttackOutcome(DamageAttack attack, DamageShip t, DamageConditions c, {bool stopper = false}) {
+  // 爆雷の装甲減少補正 (装甲は1未満にならない)
+  final armor = attack.armorReduction > 0 ? max(1.0, t.armor - attack.armorReduction) : t.armor;
   DamageOutcome of(List<(double, List<double>)> variants) =>
-      damageMixedOutcome(variants: variants, armor: t.armor, hp: t.hp, maxHp: t.maxHp, ammo: c.ammo, stopper: stopper);
+      damageMixedOutcome(variants: variants, armor: armor, hp: t.hp, maxHp: t.maxHp, ammo: c.ammo, stopper: stopper);
   return (of(attack.normal), of(attack.critical));
 }
+
+// ---- 夜戦 ----
+
+/// 後期型の潜水艦魚雷
+const kDmgLateSubTorpedoes = {213, 214, 383, 441, 443, 457, 461, 512};
+
+/// 熟練見張員・水雷戦隊 熟練見張員
+const kDmgLookouts = {129, 412};
+const kDmgTorpedoSquadronLookout = 412;
+const kDmgDrum = 75;
+const kDmgDGunKai2 = 267, kDmgDGunKai3 = 366;
+const kDmgNightZuiun = 490;
+
+/// 夜間作戦航空要員
+const kDmgNightPersonnel = {258, 259};
+
+/// 夜間飛行機のうち、夜戦・夜攻・夜爆以外 (光電管彗星・岩井爆戦・Swordfish系)
+const kDmgPhotoSuisei = 320;
+const kDmgOtherNightPlanes = {154, 242, 243, 244};
+
+/// 夜間作戦航空要員なしでも夜戦で攻撃できる空母 (火力 + 雷装で攻撃する)
+bool _carrierNightGunfire(DamageShip a) {
+  final n = a.name;
+  if (n.startsWith('Graf Zeppelin') || n.startsWith('Lexington') || n.startsWith('Wasp') || n == 'Saratoga') return true;
+  if (const {'大鷹改二', '雲鷹改二', '神鷹改二', '加賀改二護'}.contains(n)) return true;
+  return n.startsWith('Ark Royal') && a.equips.any((e) => const {242, 243, 244}.contains(e.itemId) && e.count > 0);
+}
+
+bool _isNightFighter(DamageEquip e) => e.icon == 45 && e.count > 0;
+bool _isNightAttacker(DamageEquip e) => e.icon == 46 && e.count > 0;
+bool _isNightBomber(DamageEquip e) => e.icon == 58 && e.count > 0;
+bool _isNightPlane(DamageEquip e) =>
+    e.count > 0 && (const {45, 46, 58}.contains(e.icon) || e.itemId == kDmgPhotoSuisei || kDmgOtherNightPlanes.contains(e.itemId));
+
+/// 夜間航空攻撃ができる (夜間作戦航空要員か特定の艦 + 夜間飛行機)
+bool damageCanNightAir(DamageShip a) =>
+    a.carrier &&
+    !a.enemy &&
+    (a.equips.any((e) => kDmgNightPersonnel.contains(e.itemId)) || const {'Saratoga Mk.II', '赤城改二戊', '加賀改二戊', '龍鳳改二戊'}.contains(a.name)) &&
+    a.equips.any((e) => _isNightFighter(e) || _isNightAttacker(e));
+
+/// 夜戦の特殊攻撃の候補: (名前, 倍率, 1発ごとの倍率の並び。2回攻撃は2つ、1〜2回のものは null)
+List<(String, String, double, int, bool)> damageNightSpecials(DamageShip a) {
+  final specials = <(String, String, double, int, bool)>[];
+  final main = a.countOf((e) => e.isMainGun);
+  final secondary = a.countOf((e) => e.isSecondary);
+  final torpedo = a.countOf((e) => e.isTorpedo);
+  final surfaceRadar = a.countOf((e) => e.isRadar && e.los >= 5);
+  // 駆逐艦専用カットイン (1回か2回当たる)。通常のカットインと両方判定される
+  if (a.shipType == kDmgDD) {
+    final d2 = a.countOf((e) => e.itemId == kDmgDGunKai2);
+    final d3 = a.countOf((e) => e.itemId == kDmgDGunKai3);
+    final dGun = (d2 + d3 >= 2 ? 1.4 : (d2 + d3 == 1 ? 1.25 : 1.0)) * (d3 >= 2 ? 1.1 : (d3 == 1 ? 1.05 : 1.0));
+    final lookout = a.countOf((e) => kDmgLookouts.contains(e.itemId));
+    final squadronLookout = a.countOf((e) => e.itemId == kDmgTorpedoSquadronLookout);
+    if (main >= 1 && torpedo >= 1 && surfaceRadar >= 1) specials.add(('主魚電', 'GTR', 1.3 * dGun, 1, true));
+    if (torpedo >= 1 && lookout >= 1 && surfaceRadar >= 1) specials.add(('魚見電', 'TLR', 1.2 * dGun, 1, true));
+    if (torpedo >= 2 && squadronLookout >= 1) specials.add(('魚水魚', 'TsT', 1.5, 1, true));
+    if (torpedo >= 1 && squadronLookout >= 1 && a.countOf((e) => e.itemId == kDmgDrum) >= 1) specials.add(('魚ド水', 'TDs', 1.3, 1, true));
+  }
+  // 夜間瑞雲カットイン (2回)
+  final zuiun = a.countOf((e) => e.itemId == kDmgNightZuiun && e.count > 0);
+  if (zuiun >= 1 && main >= 2 && const {kDmgCL, kDmgCAV, kDmgBBV, kDmgAV}.contains(a.shipType)) {
+    final mod = (zuiun >= 2 ? 1.32 : 1.24) + (surfaceRadar >= 1 ? 0.04 : 0);
+    specials.add(('夜間瑞雲', 'Night Zuiun', mod, 2, false));
+  }
+  // 通常のカットインは倍率の一番高いものだけ判定される (潜水艦は後期型魚雷のカットイン)
+  final lateTorpedo = a.countOf((e) => kDmgLateSubTorpedoes.contains(e.itemId));
+  final subRadar = a.countOf((e) => e.category == kDmgSubRadar);
+  final generic = <(String, String, double, int, bool)>[
+    if (main >= 3) ('主主主', 'MMM', 2.0, 1, false),
+    if (a.submarine && lateTorpedo >= 1 && subRadar >= 1) ('後期魚雷+電探', 'Late torp+radar', 1.75, 2, false),
+    if (main >= 2 && secondary >= 1) ('主主副', 'MMS', 1.75, 1, false),
+    if (a.submarine && lateTorpedo >= 2) ('後期魚雷×2', 'Late torp×2', 1.6, 2, false),
+    if (torpedo >= 2) ('魚雷カットイン', 'Torpedo CI', 1.5, 2, false),
+    if (main >= 1 && torpedo >= 1) ('主魚', 'Gun-torp CI', 1.3, 2, false),
+  ];
+  if (generic.isNotEmpty) {
+    specials.add(generic.first);
+  } else if (main + secondary >= 2) {
+    specials.add(('連撃', 'Double attack', 1.2, 2, false));
+  }
+  return specials;
+}
+
+/// 夜間航空攻撃の基本攻撃力 (素火力 + 夜間飛行機の火力・雷装・爆装 + 搭載数補正)
+double damageNightAirBase(DamageShip a, int contact) {
+  final naked = a.firepower - a.equips.fold(0, (s, e) => s + e.firepower);
+  var base = naked.toDouble() + contact;
+  for (final e in a.equips) {
+    if (!_isNightPlane(e)) continue;
+    final strong = const {45, 46, 58}.contains(e.icon);
+    final (k1, k2) = strong ? (3.0, 0.45) : (0.0, 0.3);
+    base += e.firepower + e.torpedo + e.bombing;
+    base += k1 * e.count + k2 * (e.firepower + e.torpedo + e.bombing + e.asw) * sqrt(e.count) + sqrt(e.improvement);
+  }
+  return base;
+}
+
+/// [a] が [t] に夜戦でできる攻撃
+List<DamageAttack> damageNightAttacks(DamageShip a, DamageShip t, DamageConditions c) {
+  final attacks = <DamageAttack>[];
+  final state = a.state;
+  // 大破では攻撃できない。潜水艦への夜戦の対潜攻撃は必ずカスダメなので計算しない
+  if (a.pt || t.pt || t.submarine || state.index >= DamageState.heavy.index) return attacks;
+  final bonus = a.enemy ? 1.0 : c.bonus;
+  final stateMod = damageStateModifier(state, DamagePhase.night);
+
+  DamageAttack attack(DamageAttackKind kind, String ja, String en, double base, double special, int hits, {double prof = 1, double fit = 0}) {
+    final pre = base * special * stateMod + fit;
+    final (normal, critical) = damagePostCap(damageSoftCap(pre, DamagePhase.night.cap), apTarget: false, bonus: bonus, proficiency: prof);
+    return DamageAttack(
+      kind: kind,
+      ja: '夜戦 $ja',
+      en: 'Night $en',
+      phase: DamagePhase.night,
+      normal: [(1, List.filled(hits, normal))],
+      critical: [(1, List.filled(hits, critical))],
+    );
+  }
+
+  if (a.carrier) {
+    if (damageCanNightAir(a) && (a.shipType == kDmgCVB ? state.index < DamageState.heavy.index : state.index < DamageState.medium.index)) {
+      final base = damageNightAirBase(a, c.nightContact);
+      final prof = damageProficiencyCritical([for (final e in a.equips) if (e.icon != 45) e]);
+      attacks.add(attack(DamageAttackKind.nightAir, '航空攻撃', 'air attack', base, 1, 1, prof: prof));
+      final fighters = a.countOf(_isNightFighter);
+      final attackers = a.countOf(_isNightAttacker);
+      final bombers = a.countOf(_isNightBomber);
+      final photo = a.countOf((e) => e.itemId == kDmgPhotoSuisei && e.count > 0);
+      final planes = a.countOf(_isNightPlane);
+      final cutIns = <(String, String, double)>[
+        if (fighters >= 2 && attackers >= 1) ('戦戦攻', 'FFA', 1.25),
+        if (fighters >= 1 && attackers >= 1) ('戦攻', 'FA', 1.2),
+        if ((fighters >= 1 && photo >= 1) || (attackers >= 1 && photo >= 1) || (fighters >= 1 && bombers >= 1) ||
+            (attackers >= 1 && bombers >= 1) || (bombers >= 1 && photo >= 1))
+          ('夜襲 (彗星・夜爆の組み合わせ)', 'Night CI', 1.2),
+        if (fighters >= 1 && planes >= 3) ('戦他他', 'FOO', 1.18),
+      ];
+      for (final (ja, en, mod) in cutIns) {
+        attacks.add(attack(DamageAttackKind.nightCutIn, '夜襲カットイン $ja ×$mod', 'night CI $en ×$mod', base, mod, 1, prof: prof));
+      }
+      return attacks;
+    }
+    if (!(a.enemy ? a.nightCarrier : _carrierNightGunfire(a))) return attacks;
+  }
+
+  // 火力 + 雷装 (陸上型への攻撃では雷装を数えない (3回目で対地補正と合わせて扱う))
+  final improvement = a.equips.fold(0.0, (s, e) => s + e.nightImprovement);
+  final torpedo = t.installation && a.equips.isNotEmpty ? 0 : a.torpedo;
+  final base = (a.firepower + torpedo + improvement + c.nightContact).toDouble();
+  final fit = damageFitGunBonus(a);
+  attacks.add(attack(DamageAttackKind.night, '通常', 'normal', base, 1, 1, fit: fit));
+  if (!a.carrier) {
+    for (final (ja, en, mod, hits, oneOrTwo) in damageNightSpecials(a)) {
+      if (oneOrTwo) {
+        // 駆逐艦専用カットインは1回か2回 (割合は分からないので半々とする)
+        final once = attack(DamageAttackKind.nightCutIn, '', '', base, mod, 1, fit: fit);
+        attacks.add(DamageAttack(
+          kind: DamageAttackKind.nightCutIn,
+          ja: '夜戦 $ja ×${mod.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '')} (1〜2回。半々と仮定)',
+          en: 'Night $en ×${mod.toStringAsFixed(3)} (1-2 hits, assumed half)',
+          phase: DamagePhase.night,
+          normal: [
+            (0.5, once.normal.single.$2),
+            (0.5, [...once.normal.single.$2, ...once.normal.single.$2]),
+          ],
+          critical: [
+            (0.5, once.critical.single.$2),
+            (0.5, [...once.critical.single.$2, ...once.critical.single.$2]),
+          ],
+        ));
+      } else {
+        attacks.add(attack(
+          ja == '連撃' ? DamageAttackKind.night : DamageAttackKind.nightCutIn,
+          '$ja ×$mod${hits > 1 ? '×$hits' : ''}',
+          '$en ×$mod${hits > 1 ? '×$hits' : ''}',
+          base,
+          mod,
+          hits,
+          fit: fit,
+        ));
+      }
+    }
+  }
+  return attacks;
+}
+
+// ---- 対潜 ----
+
+/// [a] が潜水艦 [t] にできる昼の対潜攻撃 (夜戦の対潜は必ずカスダメ)
+List<DamageAttack> damageAswAttacks(DamageShip a, DamageShip t, DamageConditions c) {
+  if (!t.submarine || a.submarine || a.state.index >= DamageState.heavy.index) return const [];
+  const aircraftTypes = {kDmgCVL, kDmgAV, kDmgCAV, kDmgBBV, kDmgLHA, kDmgCVB, kDmgCV};
+  final aswPlanes = a.equips.where((e) =>
+      e.count > 0 &&
+      (a.shipType == kDmgCVL || a.shipType == kDmgCV || a.shipType == kDmgCVB
+          ? const {kDmgDiveBomber, kDmgTorpedoBomber}.contains(e.category)
+          : const {kDmgDiveBomber, kDmgTorpedoBomber, kDmgSeaplaneBomber, kDmgAutogyro, kDmgAswPatrol, kDmgFlyingBoat}.contains(e.category)));
+  final bool aircraft;
+  if (aircraftTypes.contains(a.shipType)) {
+    if (aswPlanes.isEmpty) return const [];
+    aircraft = true;
+  } else if (const {kDmgDE, kDmgDD, kDmgCL, kDmgCLT, kDmgCT, kDmgAO}.contains(a.shipType) && a.nakedAsw > 0) {
+    aircraft = a.shipType == kDmgAO && aswPlanes.isNotEmpty;
+  } else {
+    return const [];
+  }
+  final counted = a.equips.where((e) => !kDmgAswIgnored.contains(e.category));
+  final equipAsw = counted.fold(0, (s, e) => s + e.asw);
+  final improvement = a.equips.fold(0.0, (s, e) => s + e.aswImprovement);
+  final base = 2 * sqrt(max(0, a.nakedAsw)) + 1.5 * equipAsw + improvement + (aircraft ? 8 : 13);
+  // 対潜シナジー
+  final smallSonar = a.countOf((e) => e.category == kDmgSonar) > 0;
+  final largeSonar = a.countOf((e) => e.category == kDmgLargeSonar) > 0;
+  final projector = a.countOf((e) => kDmgDepthChargeProjectors.contains(e.itemId)) > 0;
+  final mortar = a.countOf((e) => kDmgMortars.contains(e.itemId)) > 0;
+  final charge = a.countOf((e) => kDmgDepthCharges.contains(e.itemId)) > 0;
+  final oldSynergy = (smallSonar || largeSonar) && (projector || mortar) ? 1.15 : 1.0;
+  final newSynergy = 1 + (smallSonar && charge ? 0.15 : 0) + (projector && charge ? 0.1 : 0);
+  final pre = base *
+      oldSynergy *
+      newSynergy *
+      c.engagement.modifier *
+      damageFormationModifier(c.formation, DamagePhase.asw) *
+      damageStateModifier(a.state, DamagePhase.asw);
+  final (normal, critical) = damagePostCap(damageSoftCap(pre, DamagePhase.asw.cap),
+      apTarget: false, bonus: a.enemy ? 1.0 : c.bonus, proficiency: aircraft ? damageProficiencyCritical(a.equips) : 1.0);
+  // 爆雷の装甲減少補正 (海防艦は1つにつき+1)
+  final reduction = aircraft
+      ? 0.0
+      : a.equips
+          .where((e) => kDmgArmorBreakers.contains(e.itemId))
+          .fold(0.0, (s, e) => s + sqrt(max(0, e.asw - 2)) + (a.shipType == kDmgDE ? 1 : 0));
+  final synergy = oldSynergy * newSynergy;
+  return [
+    DamageAttack(
+      kind: DamageAttackKind.asw,
+      ja: '対潜${aircraft ? ' (艦載機)' : ''}${synergy > 1 ? ' シナジー×${synergy.toStringAsFixed(4).replaceFirst(RegExp(r'0+$'), '')}' : ''}',
+      en: 'ASW${aircraft ? ' (aircraft)' : ''}${synergy > 1 ? ' synergy ×${synergy.toStringAsFixed(4)}' : ''}',
+      phase: DamagePhase.asw,
+      normal: [
+        (1, [normal]),
+      ],
+      critical: [
+        (1, [critical]),
+      ],
+      armorReduction: reduction,
+    ),
+  ];
+}
+
+/// [a] が [t] にできる攻撃すべて (昼・対潜・夜)
+List<DamageAttack> damageAllAttacks(DamageShip a, DamageShip t, DamageConditions c) => [
+      ...damageDayAttacks(a, t, c),
+      ...damageAswAttacks(a, t, c),
+      ...damageNightAttacks(a, t, c),
+    ];

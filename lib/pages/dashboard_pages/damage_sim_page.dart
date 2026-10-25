@@ -49,8 +49,21 @@ class _DamageViewState extends ConsumerState<DamageView> {
   String? _node;
   final Map<String, String> _compKeys = {};
 
-  /// 狙う敵艦 (敵編成の何番目か)
+  /// 狙う艦 (自分 → 敵なら敵編成の何番目、敵 → 自分なら自分の艦隊の何番目)
   int _target = 0;
+
+  /// 敵 → 自分 を見る
+  bool _reverse = false;
+
+  /// 今の耐久 (と損傷) で計算する (しなければ満タン・無傷)
+  bool _current = false;
+
+  /// 夜間触接の定数 (0 / 5 / 7 / 9)
+  int _contact = 0;
+
+  /// イベントの特効などの倍率 (自分 → 敵)
+  double _bonus = 1.0;
+  late final TextEditingController _bonusController;
 
   /// 計算結果の使い回し
   final Map<String, (DamageOutcome, DamageOutcome)> _cache = {};
@@ -74,6 +87,14 @@ class _DamageViewState extends ConsumerState<DamageView> {
     _formation = _kFormations.containsKey(formation) ? formation! : 1;
     _engagement = DamageEngagement.values[(engagement ?? 0).clamp(0, DamageEngagement.values.length - 1)];
     _ammo = _kAmmo.containsKey(ammo) ? ammo! : 1.0;
+    try {
+      _reverse = localStorage.getBool('${_prefix}reverse') ?? false;
+      _current = localStorage.getBool('${_prefix}current') ?? false;
+      _contact = localStorage.getInt('${_prefix}contact') ?? 0;
+      _bonus = localStorage.getDouble('${_prefix}bonus') ?? 1.0;
+    } catch (_) {}
+    if (!const [0, 5, 7, 9].contains(_contact)) _contact = 0;
+    _bonusController = TextEditingController(text: _bonus == 1 ? '' : '$_bonus');
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -117,6 +138,24 @@ class _DamageViewState extends ConsumerState<DamageView> {
     } catch (_) {}
     _load();
   }
+
+  @override
+  void dispose() {
+    _bonusController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    try {
+      localStorage.setBool('${_prefix}reverse', _reverse);
+      localStorage.setBool('${_prefix}current', _current);
+      localStorage.setInt('${_prefix}contact', _contact);
+      localStorage.setDouble('${_prefix}bonus', _bonus);
+    } catch (_) {}
+  }
+
+  /// 轟沈ストッパー: 旗艦か、戦闘開始時に大破していない艦は沈まない
+  bool _stopper(List<DamageShip> own, int index) => index == 0 || own[index].state != DamageState.heavy;
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +219,47 @@ class _DamageViewState extends ConsumerState<DamageView> {
       segmented<double>(_ammo, {for (final MapEntry(:key, :value) in _kAmmo.entries) key: small(value)}, (a) => _select(ammo: a)),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Text(repairText('夜偵の触接 (夜戦の攻撃力に足す)', 'Night contact'), style: secondary),
+      ),
+      segmented<int>(_contact, {0: small(repairText('なし', 'none')), 5: small('+5'), 7: small('+7'), 9: small('+9')}, (v) {
+        setState(() => _contact = v);
+        _save();
+      }),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Row(children: [
+          Expanded(child: Text(repairText('今の耐久・損傷で計算', 'Use current HP'), style: const TextStyle(fontSize: 14))),
+          CupertinoSwitch(
+            value: _current,
+            onChanged: (v) {
+              setState(() => _current = v);
+              _save();
+            },
+          ),
+        ]),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Row(children: [
+          Expanded(child: Text(repairText('特効の倍率 (自分 → 敵)', 'Bonus multiplier (you → enemy)'), style: const TextStyle(fontSize: 14))),
+          SizedBox(
+            width: 90,
+            child: CupertinoTextField(
+              controller: _bonusController,
+              placeholder: '1.0',
+              prefix: const Padding(padding: EdgeInsets.only(left: 6), child: Text('×')),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (text) {
+                final v = double.tryParse(text.trim());
+                setState(() => _bonus = v == null || v <= 0 ? 1.0 : v);
+                _save();
+              },
+            ),
+          ),
+        ]),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: Row(children: [
           Expanded(child: Text(_statusText(map, abyssal), style: secondary)),
           CupertinoButton(
@@ -218,8 +298,10 @@ class _DamageViewState extends ConsumerState<DamageView> {
         if (selected < 0) selected = strongestEnemyComp(airFleets);
         final comp = nodeComps[selected];
         final enemies = damageEnemyFleetOf(comp, abyssal: abyssal, slotItems: slotItems, shipInfo: shipInfo);
-        final own = damageFleetOf(squads[fleetIndex]);
-        final conditions = DamageConditions(engagement: _engagement, formation: _formation, ammo: _ammo);
+        final own = damageFleetOf(squads[fleetIndex], full: !_current);
+        final conditions = DamageConditions(engagement: _engagement, formation: _formation, ammo: _ammo, nightContact: _contact, bonus: _bonus);
+        // 敵の攻撃: 陣形は敵編成のもの (連合艦隊の陣形は補正1.0)、弾薬は満タン、特効なし
+        final enemyConditions = DamageConditions(engagement: _engagement, formation: comp.formation);
         children
           ..add(_nodePicker(nodes, node, map))
           ..add(_patternSection(node, nodeComps, airFleets, selected, secondary));
@@ -232,11 +314,39 @@ class _DamageViewState extends ConsumerState<DamageView> {
         if (enemies.isEmpty) {
           children.add(_message(repairText('この編成の深海棲艦のデータがありません', 'No data for these abyssal ships'), secondary));
         } else {
-          final target = _target.clamp(0, enemies.length - 1);
-          children
-            ..add(_targetPicker(enemies, target))
-            ..add(_summarySection(own, enemies, conditions, secondary))
-            ..addAll([for (final ship in own) _shipSection(ship, enemies[target], conditions, secondary)]);
+          children.add(Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: CupertinoSlidingSegmentedControl<bool>(
+              groupValue: _reverse,
+              children: {
+                false: Text(repairText('自分 → 敵', 'You → enemy')),
+                true: Text(repairText('敵 → 自分', 'Enemy → you')),
+              },
+              onValueChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  _reverse = v;
+                  _target = 0;
+                });
+                _save();
+              },
+            ),
+          ));
+          if (!_reverse) {
+            final target = _target.clamp(0, enemies.length - 1);
+            children
+              ..add(_targetPicker([for (final e in enemies) '${e.name} (${e.hp})'], target))
+              ..add(_summarySection(own, enemies, conditions, secondary))
+              ..addAll([for (final ship in own) _shipSection(ship, enemies[target], conditions, secondary)]);
+          } else if (own.isNotEmpty) {
+            final target = _target.clamp(0, own.length - 1);
+            children
+              ..add(_targetPicker([for (final s in own) '${s.name} (${s.hp}/${s.maxHp})'], target))
+              ..add(_reverseSummarySection(own, enemies, enemyConditions, secondary))
+              ..addAll([
+                for (final enemy in enemies) _shipSection(enemy, own[target], enemyConditions, secondary, stopper: _stopper(own, target)),
+              ]);
+          }
         }
       }
     }
@@ -317,43 +427,49 @@ class _DamageViewState extends ConsumerState<DamageView> {
     );
   }
 
-  Widget _targetPicker(List<DamageShip> enemies, int target) => Padding(
+  Widget _targetPicker(List<String> labels, int target) => Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
         child: Wrap(spacing: 6, runSpacing: 6, children: [
-          for (final (i, e) in enemies.indexed) _chip('${i + 1} ${e.name} (${e.hp})', i == target, () => setState(() => _target = i)),
+          for (final (i, label) in labels.indexed) _chip('${i + 1} $label', i == target, () => setState(() => _target = i)),
         ]),
       );
 
   (DamageOutcome, DamageOutcome) _outcome(DamageAttack attack, DamageShip target, DamageConditions c, {bool stopper = false}) {
-    final key = '${attack.normal}|${attack.critical}|${target.hp}|${target.maxHp}|${target.armor}|${c.ammo}|$stopper';
+    final key = '${attack.normal}|${attack.critical}|${attack.armorReduction}|${target.hp}|${target.maxHp}|${target.armor}|${c.ammo}|$stopper';
     if (_cache.length > 4000) _cache.clear();
     return _cache[key] ??= damageAttackOutcome(attack, target, c, stopper: stopper);
+  }
+
+  /// [attackers] の攻撃のうち、[target] を一番撃沈・大破させやすいもの (通常の命中)
+  ((double, String), (double, String)) _best(List<DamageShip> attackers, DamageShip target, DamageConditions c, {bool stopper = false}) {
+    var bestSink = (0.0, '');
+    var bestHeavy = (0.0, '');
+    for (final ship in attackers) {
+      for (final attack in damageAllAttacks(ship, target, c)) {
+        final (normal, _) = _outcome(attack, target, c, stopper: stopper);
+        final label = '${ship.name} ${repairText(attack.ja, attack.en)}';
+        if (normal.sink > bestSink.$1) bestSink = (normal.sink, label);
+        if (normal.heavyOrWorse > bestHeavy.$1) bestHeavy = (normal.heavyOrWorse, label);
+      }
+    }
+    return (bestSink, bestHeavy);
   }
 
   /// 要約: 敵艦ごとに、1回 (通常の命中) で撃沈・大破できる一番よい攻撃
   Widget _summarySection(List<DamageShip> own, List<DamageShip> enemies, DamageConditions c, TextStyle secondary) {
     return QuestDetailSection(
-      title: repairText('1回の攻撃で撃沈・大破できるか (通常の命中・昼戦)', 'Can one hit sink it? (normal hit, day)'),
-      footer: repairText('タップでその敵の詳細。クリティカルは各艦の欄を見てください', 'Tap for details'),
+      title: repairText('1回の攻撃で撃沈・大破できるか (通常の命中)', 'Can one hit sink it? (normal hit)'),
+      footer: repairText('昼戦・対潜・夜戦の攻撃すべてから選んでいます。タップでその敵の詳細。クリティカルは各艦の欄を見てください', 'Tap for details'),
       children: [
         for (final (i, enemy) in enemies.indexed)
           () {
-            var bestSink = (0.0, '');
-            var bestHeavy = (0.0, '');
-            for (final ship in own) {
-              for (final attack in damageDayAttacks(ship, enemy, c)) {
-                final (normal, _) = _outcome(attack, enemy, c);
-                final label = '${ship.name} ${repairText(attack.ja, attack.en)}';
-                if (normal.sink > bestSink.$1) bestSink = (normal.sink, label);
-                if (normal.heavyOrWorse > bestHeavy.$1) bestHeavy = (normal.heavyOrWorse, label);
-              }
-            }
+            final (sink, heavy) = _best(own, enemy, c);
             final lines = [
-              bestSink.$1 > 0
-                  ? repairText('撃沈 最大 ${airPercent(bestSink.$1)} (${bestSink.$2})', 'Sink up to ${airPercent(bestSink.$1)} (${bestSink.$2})')
+              sink.$1 > 0
+                  ? repairText('撃沈 最大 ${airPercent(sink.$1)} (${sink.$2})', 'Sink up to ${airPercent(sink.$1)} (${sink.$2})')
                   : repairText('1回では撃沈できない', 'Cannot sink with one hit'),
-              if (bestHeavy.$1 > 0)
-                repairText('大破以上 最大 ${airPercent(bestHeavy.$1)} (${bestHeavy.$2})', 'Heavy+ up to ${airPercent(bestHeavy.$1)} (${bestHeavy.$2})'),
+              if (heavy.$1 > 0)
+                repairText('大破以上 最大 ${airPercent(heavy.$1)} (${heavy.$2})', 'Heavy+ up to ${airPercent(heavy.$1)} (${heavy.$2})'),
             ];
             return CupertinoListTile(
               title: Text('${i + 1} ${enemy.name}', style: const TextStyle(fontSize: 14)),
@@ -366,26 +482,55 @@ class _DamageViewState extends ConsumerState<DamageView> {
     );
   }
 
-  /// 自分の艦1隻の攻撃と、狙う敵艦に当たったときの結果
-  Widget _shipSection(DamageShip ship, DamageShip target, DamageConditions c, TextStyle secondary) {
-    final attacks = damageDayAttacks(ship, target, c);
+  /// 要約 (敵 → 自分): 自分の艦ごとに、敵の攻撃1回 (通常の命中) で大破・撃沈しうるか
+  Widget _reverseSummarySection(List<DamageShip> own, List<DamageShip> enemies, DamageConditions c, TextStyle secondary) {
+    return QuestDetailSection(
+      title: repairText('敵の攻撃1回で大破するか (通常の命中)', 'Can one enemy hit cause heavy damage?'),
+      footer: repairText(
+          '旗艦と、戦闘開始時に大破していない艦は沈みません (轟沈ストッパー)。今の耐久で計算する場合は、大破している随伴艦が撃沈されうるかも出ます。タップでその艦の詳細',
+          'Flagship and ships not heavily damaged at the start cannot sink. Tap for details'),
+      children: [
+        for (final (i, ship) in own.indexed)
+          () {
+            final (sink, heavy) = _best(enemies, ship, c, stopper: _stopper(own, i));
+            final lines = [
+              if (sink.$1 > 0) repairText('撃沈 最大 ${airPercent(sink.$1)} (${sink.$2})', 'Sink up to ${airPercent(sink.$1)} (${sink.$2})'),
+              heavy.$1 > 0
+                  ? repairText('大破以上 最大 ${airPercent(heavy.$1)} (${heavy.$2})', 'Heavy+ up to ${airPercent(heavy.$1)} (${heavy.$2})')
+                  : repairText('1回では大破しない', 'No heavy damage from one hit'),
+            ];
+            return CupertinoListTile(
+              title: Text('${i + 1} ${ship.name}', style: const TextStyle(fontSize: 14)),
+              subtitle: Text(lines.join('\n'), maxLines: 3),
+              additionalInfo: Text(repairText('耐久${ship.hp}/${ship.maxHp}・装甲${ship.armor.round()}', 'HP ${ship.hp}/${ship.maxHp}, armor ${ship.armor.round()}'),
+                  style: secondary),
+              onTap: () => setState(() => _target = i),
+            );
+          }(),
+      ],
+    );
+  }
+
+  /// 1隻の攻撃と、狙う艦に当たったときの結果
+  Widget _shipSection(DamageShip ship, DamageShip target, DamageConditions c, TextStyle secondary, {bool stopper = false}) {
+    final attacks = damageAllAttacks(ship, target, c);
     return QuestDetailSection(
       title: repairText('${ship.name} → ${target.name}', '${ship.name} → ${target.name}'),
       children: [
-        if (target.pt)
+        if (target.pt || ship.pt)
           CupertinoListTile(title: Text(repairText('PT小鬼群はダメージの式が特殊なため計算しません', 'PT Imps are not supported'), style: secondary)),
-        if (attacks.isEmpty && !target.pt)
+        if (attacks.isEmpty && !target.pt && !ship.pt)
           CupertinoListTile(
             title: Text(
               target.submarine
-                  ? repairText('潜水艦には昼の砲撃・雷撃は届きません (対潜は次の段階で追加)', 'Submarines: ASW comes later')
+                  ? repairText('潜水艦を攻撃できません (対潜できる艦・装備がない)', 'Cannot attack submarines')
                   : repairText('この相手にできる攻撃がありません', 'No attack against this target'),
               style: secondary,
             ),
           ),
         for (final attack in attacks)
           () {
-            final (normal, critical) = _outcome(attack, target, c);
+            final (normal, critical) = _outcome(attack, target, c, stopper: stopper);
             return CupertinoListTile(
               title: Text(repairText(attack.ja, attack.en), style: const TextStyle(fontSize: 14)),
               subtitle: Text(

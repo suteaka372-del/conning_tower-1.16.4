@@ -10,9 +10,6 @@ import 'damage_attacks.dart';
 
 export 'damage_attacks.dart';
 
-/// 対潜攻撃で装備対潜として数えない装備 (水偵・水戦・艦戦・飛行艇・電探・小口径主砲)
-const kDmgAswIgnored = {kDmgSeaplaneRecon, kDmgSeaplaneFighter, kDmgFighter, kDmgFlyingBoat, kDmgSmallRadar, kDmgLargeRadar, kDmgLargeRadar2, kDmgSmallGun};
-
 DamageEquip damageEquipOf(Equipment e, {int count = 0, int slot = 0}) {
   final type = e.type ?? const <int>[];
   return DamageEquip(
