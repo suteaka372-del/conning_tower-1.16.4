@@ -3,13 +3,14 @@ import 'package:conning_tower/models/feature/kancolle/compass/compass_log.dart';
 import 'package:conning_tower/models/feature/kancolle/compass/compass_maps.dart';
 import 'package:conning_tower/models/feature/kancolle/expedition_check.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/pages/dashboard_pages/air_sim_page.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// 「シミュ」タブ (今は羅針盤。制空権・ダメージはあとで足す)
+/// 「シミュ」タブ (羅針盤・制空権。ダメージはあとで足す)
 class SimulatorPage extends ConsumerStatefulWidget {
   const SimulatorPage({super.key});
 
@@ -18,6 +19,19 @@ class SimulatorPage extends ConsumerStatefulWidget {
 }
 
 class _SimulatorPageState extends ConsumerState<SimulatorPage> with AutomaticKeepAliveClientMixin {
+  static const _modeKey = 'sim_mode';
+
+  /// 0 = 羅針盤、1 = 制空権
+  int _mode = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      _mode = (localStorage.getInt(_modeKey) ?? 0).clamp(0, 1);
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -27,7 +41,34 @@ class _SimulatorPageState extends ConsumerState<SimulatorPage> with AutomaticKee
         borderRadius: BorderRadius.circular(10.0),
         child: ColoredBox(
           color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
-          child: const SafeArea(bottom: false, child: CompassView()),
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: CupertinoSlidingSegmentedControl<int>(
+                      groupValue: _mode,
+                      children: {
+                        0: Text(repairText('羅針盤', 'Compass')),
+                        1: Text(repairText('制空権', 'Air power')),
+                      },
+                      onValueChanged: (v) {
+                        if (v == null) return;
+                        setState(() => _mode = v);
+                        try {
+                          localStorage.setInt(_modeKey, v);
+                        } catch (_) {}
+                      },
+                    ),
+                  ),
+                ),
+                Expanded(child: _mode == 0 ? const CompassView() : const AirView()),
+              ],
+            ),
+          ),
         ),
       ),
     );

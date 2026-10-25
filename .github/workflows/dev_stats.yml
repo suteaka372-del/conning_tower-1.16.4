@@ -3,6 +3,8 @@
 # 元データは poi の公開データ (https://api.poi.moe/dump/createitemrecords.gz、毎日更新・毎月リセット)。
 # 月ごとの集計を残しておき、直近3か月分を合わせて使う。
 # data ブランチは毎回1つのコミットに作り直す (毎日の更新で履歴が増え続けないように)。
+# あわせて、制空権シミュレーター用の深海棲艦データ (airsim/abyssal.json) も作る
+# (元データは KC3Kai/kancolle-replay の kcSHIPDATA.js、MIT License)。
 name: Development stats
 
 on:
@@ -29,16 +31,26 @@ jobs:
           node-version: 22
 
       - name: Test aggregator
-        run: node --test tool/dev_stats/aggregate.test.mjs
+        run: |
+          node --test tool/dev_stats/aggregate.test.mjs
+          node --test tool/air_sim/abyssal.test.mjs
 
       - name: Restore saved months
         run: |
-          mkdir -p out/devstats
+          mkdir -p out/devstats out/airsim
           if git ls-remote --exit-code --heads origin data >/dev/null; then
             git fetch --depth=1 origin data
             git archive FETCH_HEAD devstats | tar -x -C out || true
+            git archive FETCH_HEAD airsim | tar -x -C out || true
           fi
-          ls -la out/devstats
+          ls -la out/devstats out/airsim
+
+      # 失敗しても前回の airsim をそのまま残す (開発の統計の更新は止めない)
+      - name: Abyssal data for the air-power simulator
+        continue-on-error: true
+        run: |
+          curl -fsSL --retry 3 --retry-delay 30 -o kcSHIPDATA.js https://raw.githubusercontent.com/KC3Kai/kancolle-replay/master/js/kcSHIPDATA.js
+          node tool/air_sim/abyssal.mjs kcSHIPDATA.js out/airsim/abyssal.json
 
       - name: Download poi development records
         run: curl -fsSL --retry 3 --retry-delay 30 -o createitemrecords.gz https://api.poi.moe/dump/createitemrecords.gz

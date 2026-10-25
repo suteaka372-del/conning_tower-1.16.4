@@ -17,6 +17,8 @@ class PathUtil {
   late String localEoQuestTrackersPath;
   late String localEoQuestsMetadataPath;
   late String localDevStatsPath;
+  late String localAirAbyssalPath;
+  late String localAirCompsDir;
 
   late String localL10nSlotItemPath;
   late String localL10nUseItemInImprovePath;
@@ -45,6 +47,8 @@ class PathUtil {
     localEoQuestTrackersPath = p.join(providersDir, "quest_tracker", "eo_quest_trackers.json");
     localEoQuestsMetadataPath = p.join(providersDir, "quest_tracker", "eo_quests_metadata.json");
     localDevStatsPath = p.join(providersDir, "dev_stats", "latest.json");
+    localAirAbyssalPath = p.join(providersDir, "air_sim", "abyssal.json");
+    localAirCompsDir = p.join(providersDir, "air_sim", "enemy_comps");
 
     final tasksDir = p.join(providersDir, "task");
     customTaskDataJsonPath = p.join(tasksDir, "tasks.json");
