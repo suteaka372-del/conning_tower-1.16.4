@@ -239,12 +239,38 @@ List<(Equipment, int)> airSwapCandidates(Iterable<Equipment> owned) {
   return list;
 }
 
-/// 深海棲艦の素の対空値と搭載数
+/// 深海棲艦の素の能力値 (ダメージシミュレーター用)
+class AbyssalStats {
+  final int hp;
+  final int firepower;
+  final int torpedo;
+  final int armor;
+  final int asw;
+
+  /// 陸上型の種類 (0 = 水上艦、1 = ソフトスキン型、2 = 砲台小鬼、3 = 集積地型、4 = 離島棲姫、5 = 北端上陸姫、6 = 港湾夏姫)
+  final int installType;
+
+  /// 1 = PT小鬼群、2 = 集積地補正を受ける、4 = 夜戦で攻撃できる空母
+  final int flags;
+
+  const AbyssalStats({
+    required this.hp,
+    required this.firepower,
+    required this.torpedo,
+    required this.armor,
+    required this.asw,
+    this.installType = 0,
+    this.flags = 0,
+  });
+}
+
+/// 深海棲艦の素の対空値と搭載数 (と、あればダメージシミュレーター用の能力値)
 class AbyssalTable {
   final Map<int, (int, List<int>)> ships;
+  final Map<int, AbyssalStats> stats;
   final String updated;
 
-  const AbyssalTable(this.ships, {this.updated = ''});
+  const AbyssalTable(this.ships, {this.stats = const {}, this.updated = ''});
 
   int aaOf(int id) => ships[id]?.$1 ?? 0;
 
@@ -257,12 +283,26 @@ class AbyssalTable {
 AbyssalTable parseAbyssalTable(String text) {
   final json = jsonDecode(text) as Map<String, dynamic>;
   final ships = <int, (int, List<int>)>{};
+  final stats = <int, AbyssalStats>{};
+  int at(List row, int i) => i < row.length && row[i] is num ? (row[i] as num).toInt() : 0;
   for (final MapEntry(:key, :value) in (json['ships'] as Map<String, dynamic>).entries) {
     final id = int.tryParse(key);
     if (id == null || value is! List || value.length < 2) continue;
     ships[id] = ((value[0] as num).toInt(), [for (final n in value[1] as List) (n as num).toInt()]);
+    // [対空, 搭載数, 耐久, 火力, 雷装, 装甲, 対潜, 陸上型, 印] (古いデータには耐久から後がない)
+    if (value.length >= 9) {
+      stats[id] = AbyssalStats(
+        hp: at(value, 2),
+        firepower: at(value, 3),
+        torpedo: at(value, 4),
+        armor: at(value, 5),
+        asw: at(value, 6),
+        installType: at(value, 7),
+        flags: at(value, 8),
+      );
+    }
   }
-  return AbyssalTable(ships, updated: '${json['updated'] ?? ''}');
+  return AbyssalTable(ships, stats: stats, updated: '${json['updated'] ?? ''}');
 }
 
 /// 敵編成の1隻 (艦ID と、スロット順の装備ID。空きは -1)

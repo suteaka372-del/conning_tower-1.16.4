@@ -167,7 +167,9 @@ double airFormationModifier(int formation) => switch (formation) {
       2 => 1.2, // 複縦陣
       3 => 1.6, // 輪形陣
       6 => 1.1, // 警戒陣
-      _ => 1.0, // 単縦陣・梯形陣・単横陣
+      11 => 1.1, // 第一警戒航行序列 (敵連合艦隊)
+      13 => 1.5, // 第三警戒航行序列 (敵連合艦隊)
+      _ => 1.0, // 単縦陣・梯形陣・単横陣など
     };
 
 String airFormationName(int formation) => switch (formation) {
@@ -177,6 +179,10 @@ String airFormationName(int formation) => switch (formation) {
       4 => '梯形陣',
       5 => '単横陣',
       6 => '警戒陣',
+      11 => '第一警戒航行序列',
+      12 => '第二警戒航行序列',
+      13 => '第三警戒航行序列',
+      14 => '第四警戒航行序列',
       _ => '陣形$formation',
     };
 

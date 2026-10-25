@@ -15,16 +15,35 @@ export function readShipData(source) {
   return context.SHIPDATA;
 }
 
-/** 深海棲艦 (ID 1501 以上) だけを { id: [素の対空, [搭載数...]] } にする */
+/** 印 (ダメージシミュレーター用) */
+export const FLAG_PT = 1; // PT小鬼群
+export const FLAG_SUPPLY_DEPOT = 2; // 集積地補正 (キャップ後) を受ける
+export const FLAG_NIGHT_ATTACK = 4; // 夜戦で攻撃できる空母
+
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * 深海棲艦 (ID 1501 以上) だけを
+ * { id: [素の対空, [搭載数...], 耐久, 火力, 雷装, 装甲, 対潜, 陸上型の種類, 印] } にする。
+ * 陸上型の種類: 0 = 水上艦、1 = ソフトスキン型、2 = 砲台小鬼 (トーチカ型)、3 = 集積地型、4 = 離島棲姫 (ハードスキン型)、5 = 北端上陸姫、6 = 港湾夏姫
+ */
 export function abyssalTable(shipData) {
   const ships = {};
   for (const [key, ship] of Object.entries(shipData)) {
     const id = Number(key);
     if (!Number.isInteger(id) || id <= 1500 || !ship) continue;
-    const aa = Number(ship.AA);
     // vm の中で作られた配列なので、Array.from でこちらの配列にする
     const slots = Array.isArray(ship.SLOTS) ? Array.from(ship.SLOTS, (n) => Math.max(0, Number(n) || 0)) : [];
-    ships[id] = [Number.isFinite(aa) ? aa : 0, slots];
+    const install = num(ship.installtype);
+    let flags = 0;
+    if (ship.isPT) flags |= FLAG_PT;
+    // 集積地夏姫は集積地補正を受けない。集積地棲姫III バカンスmode は水上艦だが集積地補正を受ける
+    if ((install === 3 && !String(ship.nameJP ?? '').includes('夏姫')) || ship.isSupplyDepot) flags |= FLAG_SUPPLY_DEPOT;
+    if (num(ship.nightattack) > 0) flags |= FLAG_NIGHT_ATTACK;
+    ships[id] = [num(ship.AA), slots, num(ship.HP), num(ship.FP), num(ship.TP), num(ship.AR), num(ship.ASW), install, flags];
   }
   return ships;
 }

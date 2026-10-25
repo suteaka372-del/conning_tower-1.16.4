@@ -4,6 +4,7 @@ import 'package:conning_tower/models/feature/kancolle/compass/compass_maps.dart'
 import 'package:conning_tower/models/feature/kancolle/expedition_check.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/pages/dashboard_pages/air_sim_page.dart';
+import 'package:conning_tower/pages/dashboard_pages/damage_sim_page.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/kancolle_quest_detail_page.dart';
@@ -21,14 +22,14 @@ class SimulatorPage extends ConsumerStatefulWidget {
 class _SimulatorPageState extends ConsumerState<SimulatorPage> with AutomaticKeepAliveClientMixin {
   static const _modeKey = 'sim_mode';
 
-  /// 0 = 羅針盤、1 = 制空権
+  /// 0 = 羅針盤、1 = 制空権、2 = ダメージ
   int _mode = 0;
 
   @override
   void initState() {
     super.initState();
     try {
-      _mode = (localStorage.getInt(_modeKey) ?? 0).clamp(0, 1);
+      _mode = (localStorage.getInt(_modeKey) ?? 0).clamp(0, 2);
     } catch (_) {}
   }
 
@@ -54,6 +55,7 @@ class _SimulatorPageState extends ConsumerState<SimulatorPage> with AutomaticKee
                       children: {
                         0: Text(repairText('羅針盤', 'Compass')),
                         1: Text(repairText('制空権', 'Air power')),
+                        2: Text(repairText('ダメージ', 'Damage')),
                       },
                       onValueChanged: (v) {
                         if (v == null) return;
@@ -65,7 +67,13 @@ class _SimulatorPageState extends ConsumerState<SimulatorPage> with AutomaticKee
                     ),
                   ),
                 ),
-                Expanded(child: _mode == 0 ? const CompassView() : const AirView()),
+                Expanded(
+                  child: switch (_mode) {
+                    1 => const AirView(),
+                    2 => const DamageView(),
+                    _ => const CompassView(),
+                  },
+                ),
               ],
             ),
           ),
