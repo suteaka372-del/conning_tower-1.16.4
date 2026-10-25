@@ -14,7 +14,11 @@ import 'package:conning_tower/models/feature/kancolle/equipment.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/models/feature/kancolle/squad.dart';
 
+import 'air_base_store.dart';
+
 import 'air_engine.dart';
+
+export 'air_base_store.dart' show AirBaseData, AirBaseSquadron;
 
 export 'air_engine.dart';
 
@@ -180,6 +184,35 @@ AirFleet ownAirFleet(
       ],
       formation: formation,
     );
+
+/// 基地航空隊 → シミュレーター用 ([equipment] は持っている装備 (固有ID → 装備))。
+/// 機数は補給したあと (満載) で計算する ([full] が false なら今の機数)
+AirBase airBaseOf(AirBaseData base, Map<int, Equipment> equipment, {bool full = true}) {
+  final squadrons = <AirSlot>[];
+  var recon = 1.0;
+  for (final (i, s) in base.squadrons.indexed) {
+    if (s.state != 1) continue;
+    final e = equipment[s.slotId];
+    final type = e?.type ?? const <int>[];
+    if (e == null || type.length < 3 || !kAirPlaneCategories.contains(type[2])) continue;
+    final count = full ? max(s.count, s.maxCount) : s.count;
+    squadrons.add(AirSlot(
+      i,
+      AirPlane(
+        itemId: e.itemId ?? 0,
+        name: e.name ?? '',
+        category: type[2],
+        aa: e.aa ?? 0,
+        improvement: e.level ?? 0,
+        proficiency: e.proficiency ?? 0,
+        interception: e.evasion ?? 0,
+      ),
+      count,
+    ));
+    if (type[2] == kAirLandRecon) recon = max(recon, (e.los ?? 0) >= 9 ? 1.18 : 1.15);
+  }
+  return AirBase(base.name.isEmpty ? '第${base.rid}基地航空隊' : base.name, squadrons, reconMultiplier: recon);
+}
 
 /// 試しに積める艦載機 (持っている艦載機を、名前・改修値・熟練度が同じものはまとめて、制空値の高い順)
 List<(Equipment, int)> airSwapCandidates(Iterable<Equipment> owned) {

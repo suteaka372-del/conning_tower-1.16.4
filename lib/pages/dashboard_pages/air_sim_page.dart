@@ -1,4 +1,5 @@
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/feature/kancolle/air/air_base_store.dart';
 import 'package:conning_tower/models/feature/kancolle/air/air_data.dart';
 import 'package:conning_tower/models/feature/kancolle/compass/compass_maps.dart';
 import 'package:conning_tower/models/feature/kancolle/equipment.dart';
@@ -72,6 +73,12 @@ class _AirViewState extends ConsumerState<AirView> {
 
   bool _showSwap = false;
 
+  /// 基地航空隊の番号 → 出撃させるか (無ければゲームで「出撃」になっているか)
+  final Map<int, bool> _lbasOn = {};
+
+  /// 基地航空隊の番号 → 攻撃するマス (ルートのとき。無ければ最後の戦闘マス)
+  final Map<int, String> _lbasTarget = {};
+
   @override
   void initState() {
     super.initState();
@@ -134,9 +141,9 @@ class _AirViewState extends ConsumerState<AirView> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: AirDataLoader.revision,
-      builder: (context, _, __) => _build(context),
+    return ListenableBuilder(
+      listenable: Listenable.merge([AirDataLoader.revision, airBaseStore.revision]),
+      builder: (context, _) => _build(context),
     );
   }
 
@@ -263,7 +270,18 @@ class _AirViewState extends ConsumerState<AirView> {
       } else {
         final enemyFleets = <String, List<AirFleet>>{for (final n in battleNodes) n: fleetsOf(n)};
         final chosen = [for (final n in battleNodes) enemyFleets[n]![selectedOf(n, enemyFleets[n]!)]];
-        final results = simulateAirBattles(own, chosen, runs: kAirSimRuns, seed: 1);
+        // 基地航空隊 (この海域の基地。それぞれ選んだマスへ2波)
+        final areaBases = airBaseStore.basesIn(map.area);
+        final airBases = {for (final b in areaBases) b.rid: airBaseOf(b, data.fleet.equipment)};
+        bool baseOn(AirBaseData b) => _lbasOn[b.rid] ?? b.actionKind == 1;
+        String targetOf(AirBaseData b) =>
+            !_route ? battleNodes.single : (battleNodes.contains(_lbasTarget[b.rid]) ? _lbasTarget[b.rid]! : battleNodes.last);
+        final basesByBattle = <int, List<AirBase>>{};
+        for (final b in areaBases) {
+          if (!baseOn(b) || airBases[b.rid]!.squadrons.isEmpty) continue;
+          (basesByBattle[battleNodes.indexOf(targetOf(b))] ??= []).add(airBases[b.rid]!);
+        }
+        final results = simulateAirBattles(own, chosen, runs: kAirSimRuns, seed: 1, bases: basesByBattle);
         final shown = _route && battleNodes.contains(_node) ? _node! : (_route ? battleNodes.last : battleNodes.single);
         final index = battleNodes.indexOf(shown);
         final fleets = enemyFleets[shown]!;
@@ -273,8 +291,11 @@ class _AirViewState extends ConsumerState<AirView> {
           final nodes = byNode.keys.toList()..sort(_nodeOrder);
           children.add(_nodePicker(nodes, shown, map));
         }
+        children.add(_patternSection(shown, byNode[shown]!, fleets, selectedOf(shown, fleets), strongestEnemyComp(fleets), secondary));
+        if (areaBases.isNotEmpty) {
+          children.add(_lbasSection(areaBases, airBases, battleNodes, baseOn, targetOf, secondary));
+        }
         children
-          ..add(_patternSection(shown, byNode[shown]!, fleets, selectedOf(shown, fleets), strongestEnemyComp(fleets), secondary))
           ..addAll(_resultSections(own, chosen[index], results[index], secondary,
               title: _route ? repairText('$shownマス (${index + 1}戦目)', 'Node $shown (battle ${index + 1})') : null))
           ..add(_swapSection(squad.ships, shipInfo?.map((k, v) => MapEntry(k, v.apiMaxeq)), data.fleet.equipment.values, secondary));
@@ -406,8 +427,62 @@ class _AirViewState extends ConsumerState<AirView> {
     );
   }
 
+/// 基地航空隊: この海域の基地を出撃させるかと、攻撃するマス
+  Widget _lbasSection(List<AirBaseData> bases, Map<int, AirBase> airBases, List<String> battleNodes, bool Function(AirBaseData) baseOn,
+      String Function(AirBaseData) targetOf, TextStyle secondary) {
+    String actionName(int kind) => switch (kind) {
+          1 => repairText('出撃', 'sortie'),
+          2 => repairText('防空', 'air defense'),
+          3 => repairText('退避', 'retreat'),
+          4 => repairText('休息', 'rest'),
+          _ => repairText('待機', 'standby'),
+        };
+    return QuestDetailSection(
+      title: repairText('基地航空隊', 'Land-based air squadrons'),
+      footer: repairText(
+          '各基地は選んだマスへ2波攻撃し、艦隊の航空戦の前に敵機を減らします。補給したあと (満載) の機数で計算します。行動半径は確かめていません',
+          'Each base attacks its node twice before the fleet air battle. Full plane counts. Range is not checked.'),
+      children: [
+        for (final b in bases)
+          () {
+            final base = airBases[b.rid]!;
+            final on = baseOn(b);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CupertinoListTile(
+                  title: Text('${base.name} (${actionName(b.actionKind)}・半径${b.distance})', style: const TextStyle(fontSize: 14)),
+                  subtitle: Text(
+                    base.squadrons.isEmpty
+                        ? repairText('配備なし', 'no squadrons')
+                        : base.squadrons.map((s) => '${s.plane.name} ${s.count}').join('\n'),
+                    maxLines: 4,
+                  ),
+                  trailing: CupertinoSwitch(
+                    value: on && base.squadrons.isNotEmpty,
+                    onChanged: base.squadrons.isEmpty ? null : (v) => setState(() => _lbasOn[b.rid] = v),
+                  ),
+                ),
+                if (on && _route && battleNodes.length > 1 && base.squadrons.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final n in battleNodes) _chip(n, n == targetOf(b), () => setState(() => _lbasTarget[b.rid] = n)),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          }(),
+      ],
+    );
+  }
+
   List<Widget> _resultSections(AirFleet own, AirFleet enemy, AirBattleResult result, TextStyle secondary, {String? title}) {
-    final needed = airPowerNeeded(result.enemyPower);
+    final needed = airPowerNeeded(result.enemyPowerAtFleet.round());
     final ownHasAaci = own.ships.any((s) => s.aaci.isNotEmpty);
     return [
       QuestDetailSection(
@@ -418,6 +493,11 @@ class _AirViewState extends ConsumerState<AirView> {
             additionalInfo: Text(repairText('自艦隊 ${result.ownPower.round()} / 敵 ${result.enemyPower}',
                 'You ${result.ownPower.round()} / enemy ${result.enemyPower}')),
           ),
+          if (result.waves.isNotEmpty)
+            CupertinoListTile(
+              title: Text(repairText('基地航空隊のあとの敵の制空値', 'Enemy AP after land-based attacks')),
+              additionalInfo: Text(repairText('平均 ${result.enemyPowerAtFleet.toStringAsFixed(1)}', 'avg ${result.enemyPowerAtFleet.toStringAsFixed(1)}')),
+            ),
           CupertinoListTile(
             title: Text(repairText('必要な制空値', 'Needed')),
             subtitle: Text(repairText(
@@ -435,6 +515,29 @@ class _AirViewState extends ConsumerState<AirView> {
             ),
         ],
       ),
+      if (result.waves.isNotEmpty)
+        QuestDetailSection(
+          title: repairText('基地航空隊の攻撃', 'Land-based attacks'),
+          children: [
+            for (final w in result.waves)
+              CupertinoListTile(
+                title: Text(
+                  repairText('${w.baseName} ${w.wave}波・制空値 ${w.basePower.round()} / 敵 ${w.enemyPower.toStringAsFixed(1)}',
+                      '${w.baseName} wave ${w.wave}, AP ${w.basePower.round()} / ${w.enemyPower.toStringAsFixed(1)}'),
+                  style: const TextStyle(fontSize: 14),
+                ),
+                subtitle: Text(
+                  [
+                    airStatesText(w.states),
+                    for (final s in w.squadrons)
+                      '${s.slot.plane.name}: ${_count(s.before)} → ${_count(s.after)}'
+                          '${s.annihilation > 0 ? repairText('・全滅 ${airPercent(s.annihilation)}', ', wiped ${airPercent(s.annihilation)}') : ''}',
+                  ].join('\n'),
+                  maxLines: 6,
+                ),
+              ),
+          ],
+        ),
       QuestDetailSection(
         title: repairText('自艦隊の艦載機 (戦闘前 → 戦闘後の平均)', 'Your planes (before → average after)'),
         footer: repairText('全滅 = そのスロットが0機になる確率。戦闘機は対空砲火では落ちません', 'Wiped = chance the slot ends at 0'),

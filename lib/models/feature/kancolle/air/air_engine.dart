@@ -76,6 +76,9 @@ class AirPlane {
   /// 艦載機熟練度 (0〜7)
   final int proficiency;
 
+  /// 迎撃 (局戦・陸戦の api_houk。基地航空隊の出撃で制空値に ×1.5 で加わる)
+  final int interception;
+
   const AirPlane({
     required this.itemId,
     required this.name,
@@ -83,6 +86,7 @@ class AirPlane {
     required this.aa,
     this.improvement = 0,
     this.proficiency = 0,
+    this.interception = 0,
   });
 
   bool get isAirCombat => kAirCombatCategories.contains(category);
@@ -213,6 +217,38 @@ int airFleetPower(AirFleet fleet, {List<List<int>>? counts}) {
   return total;
 }
 
+/// 基地航空隊の出撃で制空値に数える偵察機
+const kAirLbasReconCategories = {kAirCarrierRecon, kAirSeaplaneRecon, kAirFlyingBoat, kAirLandRecon, kAirJetRecon, kAirCarrierRecon2};
+
+/// 基地航空隊1部隊 (出撃すると同じマスへ2回 (2波) 攻撃する)
+class AirBase {
+  final String name;
+  final List<AirSlot> squadrons;
+
+  /// 偵察機による制空値の倍率 (出撃時。陸偵 索敵9以上 1.18、それ以外の陸偵 1.15)
+  final double reconMultiplier;
+
+  const AirBase(this.name, this.squadrons, {this.reconMultiplier = 1});
+}
+
+/// 基地航空隊 (出撃) の1中隊の制空値: (対空 + 迎撃×1.5 + 改修) × √機数 + 熟練度。偵察機も数える
+int airLbasSlotPower(AirPlane plane, int count) {
+  if (count <= 0) return 0;
+  if (!plane.isAirCombat && !kAirLbasReconCategories.contains(plane.category)) return 0;
+  final interception = plane.category == kAirLandFighter ? 1.5 * plane.interception : 0;
+  final improvement = plane.category == kAirLandAttacker ? 0.5 * sqrt(plane.improvement) : plane.improvementAa;
+  return ((plane.aa + interception + improvement) * sqrt(count) + plane.proficiencyBonus).floor();
+}
+
+/// 基地航空隊の制空値 ([counts] は中隊ごとの今の機数)
+int airBasePower(AirBase base, List<int> counts) {
+  var total = 0;
+  for (final (i, slot) in base.squadrons.indexed) {
+    total += airLbasSlotPower(slot.plane, counts[i]);
+  }
+  return (total * base.reconMultiplier).floor();
+}
+
 /// 制空値から制空状態を決める。[battle] は航空戦が起きるか (どちらかに制空戦に出る機体がある)
 AirState airStateOf(int own, int enemy, {bool battle = true}) {
   if (!battle) return AirState.none;
@@ -300,13 +336,48 @@ class AirSlotResult {
   double get lost => before - after;
 }
 
+/// 基地航空隊の1波ぶんの集計
+class AirWaveResult {
+  final String baseName;
+
+  /// 何波目か (1 か 2)
+  final int wave;
+  final Map<AirState, double> states;
+
+  /// 基地の制空値 (平均)
+  final double basePower;
+
+  /// そのときの敵の制空値 (平均。前の波で減った分を反映)
+  final double enemyPower;
+
+  /// 中隊ごと (戦闘前 → 戦闘後)
+  final List<AirSlotResult> squadrons;
+
+  const AirWaveResult({
+    required this.baseName,
+    required this.wave,
+    required this.states,
+    required this.basePower,
+    required this.enemyPower,
+    required this.squadrons,
+  });
+}
+
 /// 1戦ぶんの集計
 class AirBattleResult {
   final int runs;
 
   /// 味方の制空値 (平均。連戦では前の戦闘で減った分を反映)
   final double ownPower;
+
+  /// 敵の制空値 (出撃したときの機数で)
   final int enemyPower;
+
+  /// 艦隊の航空戦のときの敵の制空値 (平均。基地航空隊で減った分を反映)
+  final double enemyPowerAtFleet;
+
+  /// 基地航空隊の波ごとの集計 (攻撃した順)
+  final List<AirWaveResult> waves;
 
   /// 制空状態 → 確率
   final Map<AirState, double> states;
@@ -326,17 +397,19 @@ class AirBattleResult {
   /// 味方の対空カットインが出た割合
   final double aaciRate;
 
-  const AirBattleResult({
+  AirBattleResult({
     required this.runs,
     required this.ownPower,
     required this.enemyPower,
+    double? enemyPowerAtFleet,
+    this.waves = const [],
     required this.states,
     required this.own,
     required this.enemy,
     required this.enemyGrounded,
     required this.enemyStrikeZero,
     required this.aaciRate,
-  });
+  }) : enemyPowerAtFleet = enemyPowerAtFleet ?? enemyPower.toDouble();
 
   /// いちばん起きやすい制空状態
   AirState get likelyState => states.entries.reduce((a, b) => b.value > a.value ? b : a).key;
@@ -347,8 +420,15 @@ class _SlotTotal {
   int zero = 0, had = 0;
 }
 
-/// [own] で [enemies] と順に戦ったときの、戦闘ごとの集計。味方の機数は次の戦闘に持ち越す (敵は毎回出撃前の機数)
-List<AirBattleResult> simulateAirBattles(AirFleet own, List<AirFleet> enemies, {int runs = 5000, int? seed}) {
+/// [own] で [enemies] と順に戦ったときの、戦闘ごとの集計。味方の機数は次の戦闘に持ち越す (敵は毎回出撃前の機数)。
+/// [bases] は戦闘の番号 → そのマスを攻撃する基地航空隊 (それぞれ2波。艦隊の航空戦の前に敵機を減らす)
+List<AirBattleResult> simulateAirBattles(
+  AirFleet own,
+  List<AirFleet> enemies, {
+  int runs = 5000,
+  int? seed,
+  Map<int, List<AirBase>> bases = const {},
+}) {
   final random = Random(seed);
   final ownTotals = [
     for (final _ in enemies) [for (final ship in own.ships) [for (final _ in ship.slots) _SlotTotal()]],
@@ -364,27 +444,82 @@ List<AirBattleResult> simulateAirBattles(AirFleet own, List<AirFleet> enemies, {
   final ownFleetAa = own.fleetAa;
   final enemyPowers = [for (final e in enemies) airFleetPower(e)];
   final enemyFleetAa = [for (final e in enemies) e.fleetAa];
+  final enemyPowerAtFleet = List.filled(enemies.length, 0.0);
+  // 基地航空隊: 戦闘ごと・波ごと (基地1の1波, 基地1の2波, 基地2の1波, ...)
+  final waveBases = [for (var b = 0; b < enemies.length; b++) [for (final base in bases[b] ?? const <AirBase>[]) ...[base, base]]];
+  final waveStates = [for (final list in waveBases) [for (final _ in list) <AirState, int>{}]];
+  final waveBasePower = [for (final list in waveBases) List.filled(list.length, 0.0)];
+  final waveEnemyPower = [for (final list in waveBases) List.filled(list.length, 0.0)];
+  final waveSlots = [for (final list in waveBases) [for (final base in list) [for (final _ in base.squadrons) _SlotTotal()]]];
 
   for (var run = 0; run < runs; run++) {
     final counts = [for (final ship in own.ships) [for (final slot in ship.slots) slot.count]];
     for (final (b, enemy) in enemies.indexed) {
       final enemyCounts = [for (final ship in enemy.ships) [for (final slot in ship.slots) slot.count]];
       final start = [for (final row in counts) [...row]];
+      for (final (i, ship) in enemy.ships.indexed) {
+        for (var j = 0; j < ship.slots.length; j++) {
+          enemyTotals[b][i][j].before += enemyCounts[i][j];
+        }
+      }
+
+      // 基地航空隊 (同じ基地の1波と2波は機数を持ち越す)
+      List<int>? baseCounts;
+      for (final (k, base) in waveBases[b].indexed) {
+        if (k.isEven) baseCounts = [for (final s in base.squadrons) s.count];
+        final squadrons = baseCounts!;
+        for (final (j, total) in waveSlots[b][k].indexed) {
+          total.before += squadrons[j];
+        }
+        final basePower = airBasePower(base, squadrons);
+        final enemyNow = airFleetPower(enemy, counts: enemyCounts);
+        waveBasePower[b][k] += basePower;
+        waveEnemyPower[b][k] += enemyNow;
+        final baseFlies = base.squadrons.indexed.any((e) => squadrons[e.$1] > 0 && (e.$2.plane.isAirCombat || kAirLbasReconCategories.contains(e.$2.plane.category)));
+        final waveState = airStateOf(basePower, enemyNow, battle: baseFlies);
+        waveStates[b][k][waveState] = (waveStates[b][k][waveState] ?? 0) + 1;
+        if (waveState != AirState.none) {
+          for (final (j, slot) in base.squadrons.indexed) {
+            if (!slot.plane.isAirCombat) continue;
+            squadrons[j] -= airOwnStage1Loss(squadrons[j], waveState, jet: slot.plane.isJet, random: random);
+          }
+          for (final (i, ship) in enemy.ships.indexed) {
+            for (final (j, slot) in ship.slots.indexed) {
+              if (!slot.plane.isAirCombat) continue;
+              enemyCounts[i][j] -= airEnemyStage1Loss(enemyCounts[i][j], waveState, random: random);
+            }
+          }
+          // 攻撃機は敵の対空砲火を受ける (基地航空隊には敵の対空カットインは出ない)
+          if (enemy.hasSurfaceShip) {
+            for (final (j, slot) in base.squadrons.indexed) {
+              if (!slot.plane.isAttacker || squadrons[j] <= 0) continue;
+              final interceptor = enemy.ships[random.nextInt(enemy.ships.length)];
+              squadrons[j] = airEnemyAaRemaining(squadrons[j], interceptor, enemyFleetAa[b], random: random);
+            }
+          }
+        }
+        for (final (j, total) in waveSlots[b][k].indexed) {
+          total.after += squadrons[j];
+          total.afterAirCombat += squadrons[j];
+          if (base.squadrons[j].count > 0) {
+            total.had++;
+            if (squadrons[j] <= 0) total.zero++;
+          }
+        }
+      }
+
       final ownPower = airFleetPower(own, counts: counts);
       powerTotals[b] += ownPower;
+      final enemyPower = airFleetPower(enemy, counts: enemyCounts);
+      enemyPowerAtFleet[b] += enemyPower;
       final battle = _hasAirCombat(own, counts) || _hasAirCombat(enemy, enemyCounts);
-      final state = airStateOf(ownPower, enemyPowers[b], battle: battle);
+      final state = airStateOf(ownPower, enemyPower, battle: battle);
       stateCounts[b][state] = (stateCounts[b][state] ?? 0) + 1;
 
       // 戦闘前
       for (final (i, ship) in own.ships.indexed) {
         for (var j = 0; j < ship.slots.length; j++) {
           ownTotals[b][i][j].before += counts[i][j];
-        }
-      }
-      for (final (i, ship) in enemy.ships.indexed) {
-        for (var j = 0; j < ship.slots.length; j++) {
-          enemyTotals[b][i][j].before += enemyCounts[i][j];
         }
       }
 
@@ -486,6 +621,18 @@ List<AirBattleResult> simulateAirBattles(AirFleet own, List<AirFleet> enemies, {
         runs: runs,
         ownPower: runs == 0 ? 0 : powerTotals[b] / runs,
         enemyPower: enemyPowers[b],
+        enemyPowerAtFleet: runs == 0 ? enemyPowers[b].toDouble() : enemyPowerAtFleet[b] / runs,
+        waves: [
+          for (final (k, base) in waveBases[b].indexed)
+            AirWaveResult(
+              baseName: base.name,
+              wave: k.isEven ? 1 : 2,
+              states: {for (final s in AirState.values) if ((waveStates[b][k][s] ?? 0) > 0) s: waveStates[b][k][s]! / runs},
+              basePower: runs == 0 ? 0 : waveBasePower[b][k] / runs,
+              enemyPower: runs == 0 ? 0 : waveEnemyPower[b][k] / runs,
+              squadrons: [for (final (j, slot) in base.squadrons.indexed) _slotResult(slot, waveSlots[b][k][j], runs)],
+            ),
+        ],
         states: {for (final s in AirState.values) if ((stateCounts[b][s] ?? 0) > 0) s: stateCounts[b][s]! / runs},
         own: [
           for (final (i, ship) in own.ships.indexed)

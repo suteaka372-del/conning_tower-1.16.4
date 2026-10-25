@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/data/kcsapi/start2/get_data_entity.dart';
+import 'package:conning_tower/models/feature/kancolle/air/air_base_store.dart';
 import 'package:conning_tower/models/feature/kancolle/air/air_data.dart';
 import 'package:conning_tower/models/feature/kancolle/battle_info.dart';
 import 'package:conning_tower/models/feature/kancolle/data.dart';
@@ -128,6 +129,41 @@ void main() {
     await tester.tap(find.textContaining('1戦目 Eマス'));
     await tester.pumpAndSettle();
     expect(find.text('Eマスの敵編成 (1パターン)'), findsOneWidget);
+    expect(find.text('基地航空隊'), findsNothing);
+
+    // 基地航空隊 (ゲームの通信から): 最初は最後の戦闘マス (G) を攻撃する
+    airBaseStore.onApi('/api_get_member/mapinfo', {
+      'api_data': {
+        'api_air_base': [
+          {
+            'api_area_id': 2, 'api_rid': 1, 'api_name': '第1基地航空隊', 'api_distance': {'api_base': 7, 'api_bonus': 0}, //
+            'api_action_kind': 1,
+            'api_plane_info': [
+              {'api_squadron_id': 1, 'api_state': 1, 'api_slotid': 1, 'api_count': 12, 'api_max_count': 18, 'api_cond': 1},
+            ],
+          },
+        ],
+      },
+    }, null);
+    await tester.pumpAndSettle();
+    expect(find.text('基地航空隊'), findsOneWidget);
+    expect(find.textContaining('第1基地航空隊 (出撃・半径7)'), findsOneWidget);
+    expect(find.textContaining('第1基地航空隊 1波'), findsNothing); // E は攻撃していない
+    await tester.tap(find.textContaining('2戦目 Gマス'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('第1基地航空隊 1波・制空値'), findsOneWidget);
+    expect(find.textContaining('第1基地航空隊 2波・制空値'), findsOneWidget);
+    // 攻撃するマスを E に変える
+    await tester.tap(find.textContaining('1戦目 Eマス'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CupertinoButton, 'E'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('第1基地航空隊 1波・制空値'), findsOneWidget);
+    expect(find.text('基地航空隊のあとの敵の制空値'), findsOneWidget);
+    // 出撃させない
+    await tester.tap(find.byType(CupertinoSwitch));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('第1基地航空隊 1波'), findsNothing);
 
     // 装備を試す: 4スロット目の彗星を外す
     expect(find.textContaining('彗星: 10'), findsOneWidget);

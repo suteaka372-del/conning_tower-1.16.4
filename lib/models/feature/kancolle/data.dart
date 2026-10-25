@@ -29,6 +29,7 @@ import 'map_state.dart';
 import 'operation_queue.dart';
 import 'quest_assistant.dart';
 import 'air_battle_record.dart';
+import 'air/air_base_store.dart';
 import 'raw_data.dart';
 import 'quest_eo_tracker.dart';
 import 'quest_fleet_condition.dart';
@@ -154,6 +155,8 @@ class KancolleData {
 
     if (!source.startsWith("local")) {
       trackQuestProgress(path, json, params);
+      // 制空権シミュレーター用に基地航空隊の状態を覚えておく
+      airBaseStore.onApi(path, json, params);
     }
 
     if (isBattleAPI(path)) {
