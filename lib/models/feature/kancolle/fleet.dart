@@ -35,13 +35,15 @@ class Fleet with _$Fleet {
   void updateNotInFleetIds(Map<int, List<int>>? shipUpgradeMap) {
     notInFleetIds = {};
     if (shipUpgradeMap == null) return;
+    // 持っている艦の一覧は1回だけ作る (以前は確認のたびに全艦から作り直していて、母港に戻るたびに重かった)
+    final owned = shipIds;
     for (final e in shipUpgradeMap.entries) {
-      if (shipIds.contains(e.key)) {
+      if (owned.contains(e.key)) {
         continue;
       }
       bool haveUpgraded = false;
       for (final id in e.value) {
-        if (shipIds.contains(id)) {
+        if (owned.contains(id)) {
           haveUpgraded = true;
           break;
         }
@@ -57,15 +59,20 @@ class Fleet with _$Fleet {
   void initEquipmentCollections(Iterable<Equipment> equipments) {
     equipmentCollections ??= {};
 
-    final itemIds = equipments.map((e) => e.itemId!).toSet();
-    for (var itemId in itemIds) {
-      final subEquipments = equipments.where((e) => e.itemId == itemId);
+    // 装備の種類ごとにまとめる。1回たどるだけにする (以前は種類ごとに全装備をたどり直していて、
+    // 渡されるのが作りながら読む一覧なので、そのたびに全装備を作り直していた)
+    final byItem = <int, List<Equipment>>{};
+    for (final e in equipments) {
+      (byItem[e.itemId!] ??= []).add(e);
+    }
+    for (final MapEntry(key: itemId, value: subEquipments) in byItem.entries) {
+      final first = subEquipments.first;
       equipmentCollections?[itemId] = EquipmentCollection(
-        id: subEquipments.first.itemId!,
-        type: subEquipments.first.type!,
-        sortNo: subEquipments.first.sortNo!,
-        name: subEquipments.first.name ?? "Item ${subEquipments.first.itemId}",
-        equipments: subEquipments.toList(),
+        id: first.itemId!,
+        type: first.type!,
+        sortNo: first.sortNo!,
+        name: first.name ?? "Item ${first.itemId}",
+        equipments: subEquipments,
       );
     }
   }

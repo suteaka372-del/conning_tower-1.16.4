@@ -230,6 +230,9 @@ class ObjectBox {
     }
   }
 
+  /// 書き込みをまとめて1回で行う (資源8種類の記録を、母港に戻るたびに別々に書かないように)
+  void inWriteTransaction(void Function() action) => store.runInTransaction(TxMode.write, action);
+
   void saveResource(DateTime time, String admiral, String resource, int value) {
     if (admiral == '') {
       return;

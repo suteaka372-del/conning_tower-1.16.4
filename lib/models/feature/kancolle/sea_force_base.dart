@@ -39,6 +39,7 @@ class SeaForceBase with _$SeaForceBase {
   }
 
   void saveResource(DateTime time) {
+    if (admiral.name.isEmpty) return;
     objectbox.saveResource(time, admiral.name, "fuel", resource.fuel);
     objectbox.saveResource(time, admiral.name, "ammo", resource.ammo);
     objectbox.saveResource(time, admiral.name, "steel", resource.steel);
@@ -46,6 +47,7 @@ class SeaForceBase with _$SeaForceBase {
   }
 
   void saveMaterials(DateTime time) {
+    if (admiral.name.isEmpty) return;
     objectbox.saveResource(
         time, admiral.name, "ic", resource.instantCreateShip);
     objectbox.saveResource(time, admiral.name, "ir", resource.instantRepairs);
@@ -74,8 +76,12 @@ class SeaForceBase with _$SeaForceBase {
         developmentMaterials: developmentMaterials,
         improvementMaterials: improvementMaterials);
     final time = DateTime.now();
-    saveResource(time);
-    saveMaterials(time);
+    if (admiral.name.isNotEmpty) {
+      objectbox.inWriteTransaction(() {
+        saveResource(time);
+        saveMaterials(time);
+      });
+    }
     log(toString());
   }
 
