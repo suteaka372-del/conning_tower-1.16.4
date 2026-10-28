@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:conning_tower/main.dart';
@@ -20,6 +21,36 @@ class SideBrowserNav {
 }
 
 final sideBrowserNavProvider = StateProvider<SideBrowserNav>((ref) => const SideBrowserNav());
+
+/// 漫画のブラウザを、隠してから [delay] たったら閉じる。
+/// 一度開いたブラウザは隠しても裏で動き続け (ビューアの先読みなど)、電池を使うため。
+/// 見ていたページは [SideBrowser.saveLastUrl] で覚えてあるので、次に開くとそこから読み込み直す
+class SideBrowserCloser {
+  SideBrowserCloser({required this.onClose, this.delay = const Duration(minutes: 1)});
+
+  final VoidCallback onClose;
+  final Duration delay;
+  Timer? _timer;
+
+  bool get pending => _timer != null;
+
+  /// [showing] ブラウザを表示しているか、[created] ブラウザを作ってあるか
+  void update({required bool showing, required bool created}) {
+    if (showing || !created) {
+      cancel();
+      return;
+    }
+    _timer ??= Timer(delay, () {
+      _timer = null;
+      onClose();
+    });
+  }
+
+  void cancel() {
+    _timer?.cancel();
+    _timer = null;
+  }
+}
 
 /// 横並びモードの右側に出すブラウザ (DMMブックスの本棚など)。
 /// ゲームの WebView とは別物で、ゲーム用の設定やスクリプトは入れない。
@@ -83,6 +114,22 @@ class _SideBrowserState extends ConsumerState<SideBrowser> {
 
   void _publishNav() {
     if (mounted) ref.read(sideBrowserNavProvider.notifier).state = _nav;
+  }
+
+  late final StateController<SideBrowserNav> _navController = ref.read(sideBrowserNavProvider.notifier);
+
+  @override
+  void initState() {
+    super.initState();
+    _navController; // 閉じるとき (dispose) には ref を使えないので先に取っておく
+  }
+
+  @override
+  void dispose() {
+    // 閉じたブラウザのボタンが押せないように (小窓の左のボタン列)。画面を作り直している最中には変えられないので後で
+    final nav = _navController;
+    Future.microtask(() => nav.state = const SideBrowserNav());
+    super.dispose();
   }
 
   @override

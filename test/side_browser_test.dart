@@ -25,6 +25,35 @@ void main() {
     expect(state.isShowing(SidePanel.dashboard), isTrue);
   });
 
+  testWidgets('hidden browser closes after a minute, showing it again cancels', (tester) async {
+    var closed = 0;
+    final closer = SideBrowserCloser(onClose: () => closed++);
+    addTearDown(closer.cancel);
+
+    // 作っていない・表示中なら何もしない
+    closer.update(showing: false, created: false);
+    closer.update(showing: true, created: true);
+    expect(closer.pending, isFalse);
+
+    // 隠す → 59秒では閉じない → 1分で閉じる
+    closer.update(showing: false, created: true);
+    expect(closer.pending, isTrue);
+    await tester.pump(const Duration(seconds: 59));
+    expect(closed, 0);
+    // 隠したままもう一度呼んでも、待ち時間は延びない
+    closer.update(showing: false, created: true);
+    await tester.pump(const Duration(seconds: 1));
+    expect(closed, 1);
+    expect(closer.pending, isFalse);
+
+    // 1分以内にまた表示したら閉じない
+    closer.update(showing: false, created: true);
+    await tester.pump(const Duration(seconds: 30));
+    closer.update(showing: true, created: true);
+    await tester.pump(const Duration(minutes: 2));
+    expect(closed, 1);
+  });
+
   test('browser remembers the last page, starts at the DMM Books shelf', () async {
     SharedPreferences.setMockInitialValues({});
     localStorage = await SharedPreferences.getInstance();

@@ -65,6 +65,14 @@ class HomePageState extends ConsumerState<HomePage> {
   /// ブラウザは一度開いたら、ダッシュボードに切り替えても読んでいるページを保つ
   bool _browserCreated = false;
 
+  /// 隠したブラウザを1分後に閉じる (電池のため)
+  late final SideBrowserCloser _browserCloser = SideBrowserCloser(onClose: () {
+    if (mounted && sidePanel != SidePanel.browser) setState(() => _browserCreated = false);
+  });
+
+  void _updateBrowserCloser() =>
+      _browserCloser.update(showing: sidePanel == SidePanel.browser, created: _browserCreated);
+
   /// 横並び時のダッシュボード幅の割合 (境目のドラッグで変更、既定は半分)
   double sideRatio = SideBySideLayout.defaultRatio;
 
@@ -110,6 +118,7 @@ class HomePageState extends ConsumerState<HomePage> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _browserCloser.cancel();
     KancolleData.flushQuestProgress();
     super.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
@@ -123,6 +132,7 @@ class HomePageState extends ConsumerState<HomePage> {
       sidePanel = next.panel;
       if (next.isShowing(SidePanel.browser)) _browserCreated = true;
     });
+    _updateBrowserCloser();
     try {
       localStorage.setBool("landscapeDashboard", landscapeDashboard);
       localStorage.setString("landscapeSidePanel", sidePanel.name);
@@ -136,6 +146,7 @@ class HomePageState extends ConsumerState<HomePage> {
       sidePanel = sidePanel == SidePanel.browser ? SidePanel.dashboard : SidePanel.browser;
       if (sidePanel == SidePanel.browser) _browserCreated = true;
     });
+    _updateBrowserCloser();
     try {
       localStorage.setString("landscapeSidePanel", sidePanel.name);
     } catch (_) {}
