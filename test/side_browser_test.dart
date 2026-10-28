@@ -54,6 +54,14 @@ void main() {
     expect(closed, 1);
   });
 
+  test('browser is closed while the app is in the background', () {
+    expect(showSideBrowser(created: false, showing: false, suspended: false), isFalse);
+    expect(showSideBrowser(created: true, showing: false, suspended: false), isTrue);
+    expect(showSideBrowser(created: false, showing: true, suspended: false), isTrue);
+    // 漫画を表示したまま画面ロックしても閉じる
+    expect(showSideBrowser(created: true, showing: true, suspended: true), isFalse);
+  });
+
   test('browser remembers the last page, starts at the DMM Books shelf', () async {
     SharedPreferences.setMockInitialValues({});
     localStorage = await SharedPreferences.getInstance();

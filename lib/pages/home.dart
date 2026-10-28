@@ -70,6 +70,19 @@ class HomePageState extends ConsumerState<HomePage> {
     if (mounted && sidePanel != SidePanel.browser) setState(() => _browserCreated = false);
   });
 
+  /// アプリが裏に回っている間はブラウザを閉じておく (画面ロックしたまま寝ても漫画の分のメモリを使わないように)。
+  /// 戻ったら最後のページから読み込み直す
+  bool _browserSuspended = false;
+
+  void _closeBrowserInBackground() {
+    _browserCloser.cancel();
+    if (!mounted || !(_browserCreated || sidePanel == SidePanel.browser)) return;
+    setState(() {
+      _browserSuspended = true;
+      _browserCreated = false;
+    });
+  }
+
   void _updateBrowserCloser() =>
       _browserCloser.update(showing: sidePanel == SidePanel.browser, created: _browserCreated);
 
@@ -107,7 +120,16 @@ class HomePageState extends ConsumerState<HomePage> {
     // 動作の重さの計測 (設定の「動作の重さ」で見られる)
     PerfMonitor.instance.start();
     // 任務の進捗はまとめて保存しているので、アプリが裏に回るときに書き出す
-    _lifecycle = AppLifecycleListener(onInactive: KancolleData.flushQuestProgress, onHide: KancolleData.flushQuestProgress);
+    _lifecycle = AppLifecycleListener(
+      onInactive: KancolleData.flushQuestProgress,
+      onHide: () {
+        KancolleData.flushQuestProgress();
+        _closeBrowserInBackground();
+      },
+      onShow: () {
+        if (_browserSuspended && mounted) setState(() => _browserSuspended = false);
+      },
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(seconds: 1));
@@ -810,7 +832,10 @@ class HomePageState extends ConsumerState<HomePage> {
                 : (kancolle
                     ? Dashboard.kancolle(notifyParent: () => setState(() {}))
                     : Dashboard.general(notifyParent: () => setState(() {}))),
-            if (_browserCreated || sidePanel == SidePanel.browser) const SideBrowser() else const SizedBox.shrink(),
+            if (showSideBrowser(created: _browserCreated, showing: sidePanel == SidePanel.browser, suspended: _browserSuspended))
+              const SideBrowser()
+            else
+              const SizedBox.shrink(),
           ],
         ),
       ),

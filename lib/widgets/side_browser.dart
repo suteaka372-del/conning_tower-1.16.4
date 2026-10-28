@@ -22,6 +22,10 @@ class SideBrowserNav {
 
 final sideBrowserNavProvider = StateProvider<SideBrowserNav>((ref) => const SideBrowserNav());
 
+/// ブラウザを置いておくか。作ってあるか表示中で、アプリが裏に回っていないとき
+bool showSideBrowser({required bool created, required bool showing, required bool suspended}) =>
+    (created || showing) && !suspended;
+
 /// 漫画のブラウザを、隠してから [delay] たったら閉じる。
 /// 一度開いたブラウザは隠しても裏で動き続け (ビューアの先読みなど)、電池を使うため。
 /// 見ていたページは [SideBrowser.saveLastUrl] で覚えてあるので、次に開くとそこから読み込み直す
