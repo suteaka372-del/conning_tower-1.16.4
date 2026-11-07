@@ -17,7 +17,7 @@ String perfReportText(PerfMonitor m) {
     '[重かった通信] 回数・読み込み 平均/最大・作り直し 平均/最大 (ms)',
     for (final s in m.slowestApis.take(15)) ...[
       '${s.path} ${s.count}回 読込 ${_ms(s.parseTotal ~/ s.count)}/${_ms(s.parseMax)} 作直 ${_ms(s.buildTotal ~/ s.count)}/${_ms(s.buildMax)}',
-      if (s.stages.isNotEmpty) '  内訳 ${perfStagesText(s)}',
+      if (perfStagesText(s).isNotEmpty) '  内訳 ${perfStagesText(s)}',
     ],
     '[最近の重いフレーム] 処理/描画 (ms)',
     for (final f in m.slowFrames.reversed)

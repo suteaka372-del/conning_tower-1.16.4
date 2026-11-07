@@ -233,14 +233,21 @@ class ObjectBox {
   /// 書き込みをまとめて1回で行う (資源8種類の記録を、母港に戻るたびに別々に書かないように)
   void inWriteTransaction(void Function() action) => store.runInTransaction(TxMode.write, action);
 
+  /// 最後に記録した値 (提督・資源・ゲームの日 → 値)。同じ値ならデータベースを調べずに済ませる
+  final Map<String, int> _lastResource = {};
+
   void saveResource(DateTime time, String admiral, String resource, int value) {
     if (admiral == '') {
       return;
     }
-    _markResourceGameDaySince();
     // search if resource log exists for today update value as high if value above high, low if value below low
     // 1日は JST 5:00 ~ 翌 4:59:59.999 (ゲームの日付の切り替わり)
     final todayStart = gameDayStart(time);
+    final lastKey = '$admiral|$resource|${todayStart.millisecondsSinceEpoch}';
+    // 前回と同じ値なら、高値・安値・終値はどれも変わらない
+    if (_lastResource[lastKey] == value) return;
+    _lastResource[lastKey] = value;
+    _markResourceGameDaySince();
     final todayEnd = todayStart
         .add(const Duration(days: 1))
         .subtract(const Duration(milliseconds: 1));

@@ -201,17 +201,20 @@ class KancolleData {
       log("destroy");
       final shipIds = requestBody.apiShipId?.split(",");
       if (shipIds != null && shipIds.isNotEmpty) {
-        for (var shipId in shipIds) {
-          final id = int.tryParse(shipId);
-          if (id != null) {
-            objectbox.saveShipLog(
-                admiral: seaForceBase.admiral.name,
-                type: ShipLogType.destroy,
-                shipName: fleet.ships
-                    .firstWhere((element) => element.uid == id)
-                    .name);
+        // まとめて解体したときに1隻ずつ書き込まないよう、1回の書き込みにまとめる
+        objectbox.inWriteTransaction(() {
+          for (var shipId in shipIds) {
+            final id = int.tryParse(shipId);
+            if (id != null) {
+              objectbox.saveShipLog(
+                  admiral: seaForceBase.admiral.name,
+                  type: ShipLogType.destroy,
+                  shipName: fleet.ships
+                      .firstWhere((element) => element.uid == id)
+                      .name);
+            }
           }
-        }
+        });
       }
     }
 
@@ -219,17 +222,19 @@ class KancolleData {
       log("改装");
       final shipIds = requestBody.apiIdItems?.split(",");
       if (shipIds != null && shipIds.isNotEmpty) {
-        for (var shipId in shipIds) {
-          final id = int.tryParse(shipId);
-          if (id != null) {
-            objectbox.saveShipLog(
-                admiral: seaForceBase.admiral.name,
-                type: ShipLogType.refit,
-                shipName: fleet.ships
-                    .firstWhere((element) => element.uid == id)
-                    .name);
+        objectbox.inWriteTransaction(() {
+          for (var shipId in shipIds) {
+            final id = int.tryParse(shipId);
+            if (id != null) {
+              objectbox.saveShipLog(
+                  admiral: seaForceBase.admiral.name,
+                  type: ShipLogType.refit,
+                  shipName: fleet.ships
+                      .firstWhere((element) => element.uid == id)
+                      .name);
+            }
           }
-        }
+        });
       }
     }
 

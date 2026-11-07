@@ -263,6 +263,11 @@ void main() {
     expect(m.slowFrames.last.screen, 'シミュ');
     expect(perfReportText(m), contains('画面 シミュ'));
     expect(perfReportText(m), contains('  内訳 データの読み取り'));
+    // 0.5ms 未満しかない通信では、空の内訳の行を出さない
+    m.recordApi('/api_get_member/useitem', parseMicros: 100, buildMicros: 100, stages: const {'その他': 100});
+    expect(perfReportText(m), contains('/api_get_member/useitem 1回'));
+    expect(perfReportText(m), isNot(contains('  内訳 \n')));
+    expect(perfReportText(m).split('\n').where((l) => l.trim() == '内訳'), isEmpty);
     expect(dashboardTabLabel(const Padding(padding: EdgeInsets.zero, child: Text('開発'))), '開発');
     expect(dashboardTabLabel(const Tab(height: 36, child: Text('シミュ'))), 'シミュ');
     expect(dashboardTabLabel(const SizedBox()), isNull);

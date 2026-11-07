@@ -93,7 +93,7 @@ class SeaForceBase with _$SeaForceBase {
     resource = resource.copyWith(
         fuel: fuel, ammo: ammo, steel: steel, bauxite: bauxite);
     final time = DateTime.now();
-    saveResource(time);
+    if (admiral.name.isNotEmpty) objectbox.inWriteTransaction(() => saveResource(time));
   }
 }
 
