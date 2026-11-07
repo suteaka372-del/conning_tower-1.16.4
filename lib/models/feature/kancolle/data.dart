@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:conning_tower/models/perf_monitor.dart';
+
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/providers/eo_quest_tracker_provider.dart';
@@ -143,7 +145,10 @@ class KancolleData {
       Toast.showError(title: S.current.TextNetworkError('${rawData.status}'));
       return;
     }
+    final perf = PerfMonitor.instance;
+    perf.lap('前処理');
     final json = jsonDecode(data);
+    perf.lap('データの読み取り');
     if (json is Map) {
       if (json['api_result'] != 1) {
         final msg = json['api_result_msg'];
@@ -159,6 +164,7 @@ class KancolleData {
       // 制空権シミュレーター用に基地航空隊の状態を覚えておく
       airBaseStore.onApi(path, json, params);
     }
+    perf.lap('任務の集計・基地');
 
     if (isBattleAPI(path)) {
       if (!ref.read(settingsProvider).kcBattleReportEnable) return;
@@ -171,8 +177,10 @@ class KancolleData {
       battleLog?.data.add(rawData.decoded);
     }
 
+    perf.lap('戦闘の記録');
     final model = DataModelAdapter.toEntity(path, json);
     final requestBody = DataModelAdapter.requestToEntity(path, params);
+    perf.lap('データの変換');
 
     checkDebuffNotify(model);
 
@@ -308,8 +316,10 @@ class KancolleData {
       }
     }
 
+    perf.lap('その他');
     parseBattle(model);
     recordAirBattle(path, json);
+    perf.lap('戦闘');
 
     if (model is GetMemberQuestListEntity) {
       if (questAssistant == null) {
@@ -451,12 +461,15 @@ class KancolleData {
       }
       battleLog = null; // reset battle log
       final isLocalCache = source.startsWith("local");
+      perf.lap('その他');
       if (!isLocalCache) repairTimer.evacuate(squads, fleet.ships);
       updateFleetShips(model.apiData.apiShip);
       fleet.combined = model.apiData.apiCombinedFlag;
+      perf.lap('母港: 艦娘');
 
       seaForceBase.updateAdmiralInfo(model.apiData.apiBasic);
       seaForceBase.updateMaterial(model.apiData.apiMaterial);
+      perf.lap('母港: 資源の保存');
 
       for (var data in model.apiData.apiDeckPort) {
         int id = data.apiId;
@@ -466,6 +479,7 @@ class KancolleData {
         }
       }
 
+      perf.lap('母港: 艦隊');
       repairTimer.ndockTime = {
         for (final ship in model.apiData.apiShip) ship.apiId: ship.apiNdockTime
       };
@@ -483,18 +497,23 @@ class KancolleData {
           shipInfo: dataInfo.shipInfo,
         );
       }
+      perf.lap('母港: 泊地修理・通知');
 
       cacheData(source, path, data);
+      perf.lap('保存');
     }
 
+    perf.lap('その他');
     if (model is GetMemberRequireInfoEntity) {
       final Iterable<Equipment> equipments = (model.apiData.apiSlotItem ?? [])
           .map((e) => Equipment.fromApi(e, dataInfo.slotItemInfo));
       fleet.equipment = Map.fromIterable(equipments, key: (item) => item.id);
       fleet.initEquipmentCollections(equipments);
       seaForceBase.updateUseItem(model.apiData.apiUseitem);
+      perf.lap('装備');
 
       cacheData(source, path, data);
+      perf.lap('保存');
     }
 
     if (model is GetMemberUseitemEntity) {
@@ -506,7 +525,9 @@ class KancolleData {
           model.apiData.map((e) => Equipment.fromApi(e, dataInfo.slotItemInfo));
       fleet.initEquipmentCollections(equipments);
       fleet.equipment = Map.fromIterable(equipments, key: (item) => item.id);
+      perf.lap('装備');
     }
+    perf.lap('その他');
   }
 
   void cacheData(String source, String path, String data) {
@@ -688,6 +709,7 @@ class KancolleData {
         parse(rawData);
         newData = copyWith();
         _setNotification(endTimeMap, newData);
+        PerfMonitor.instance.lap('遠征の通知');
       } else {
         parse(rawData);
         newData = copyWith();

@@ -231,6 +231,43 @@ void main() {
     expect(m.api['/api_port/port']!.count, 1);
   });
 
+  testWidgets('stages split the parse time, slow frames remember the tab', (tester) async {
+    final m = PerfMonitor();
+    m.lap('外'); // 通信を処理していないときは何もしない
+    void busy(int micros) {
+      final sw = Stopwatch()..start();
+      while (sw.elapsedMicroseconds < micros) {}
+    }
+
+    for (var i = 0; i < 2; i++) {
+      m.measureApi('/api_port/port', () {
+        busy(2000);
+        m.lap('データの読み取り');
+        busy(1000);
+        m.lap('母港: 艦娘');
+        m.lap('母港: 艦娘'); // 同じ名前は足していく
+      });
+      await tester.pump();
+    }
+    final stat = m.api['/api_port/port']!;
+    expect(stat.stageTotal.keys, containsAll(['データの読み取り', '母港: 艦娘', '画面へ知らせる']));
+    expect(stat.stageTotal.containsKey('外'), isFalse);
+    expect(stat.stages.first.$1, 'データの読み取り');
+    expect(stat.stageMax['データの読み取り']!, greaterThanOrEqualTo(2000));
+    expect(stat.stages.fold(0, (sum, s) => sum + s.$2), lessThanOrEqualTo(stat.parseTotal ~/ stat.count));
+    expect(perfStagesText(stat), startsWith('データの読み取り 2.'));
+    expect(perfStagesText(stat), contains('母港: 艦娘 1.'));
+
+    m.screen = 'シミュ';
+    m.recordFrame(40, 1);
+    expect(m.slowFrames.last.screen, 'シミュ');
+    expect(perfReportText(m), contains('画面 シミュ'));
+    expect(perfReportText(m), contains('  内訳 データの読み取り'));
+    expect(dashboardTabLabel(const Padding(padding: EdgeInsets.zero, child: Text('開発'))), '開発');
+    expect(dashboardTabLabel(const Tab(height: 36, child: Text('シミュ'))), 'シミュ');
+    expect(dashboardTabLabel(const SizedBox()), isNull);
+  });
+
   testWidgets('performance page lists the records', (tester) async {
     final m = PerfMonitor()..reset();
     m.recordApi('/api_port/port', parseMicros: 12000, buildMicros: 3000);

@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/perf_monitor.dart';
 import '../providers/dashboard_tab_provider.dart';
 import '../providers/generatable/settings_provider.dart';
 
@@ -78,6 +79,7 @@ class _DashboardTabViewState extends ConsumerState<DashboardTabView>
   /// 表示中のタブを伝える (隠れているタブはゲームのデータが届いても作り直さない)
   void _showTab() {
     if (!mounted) return;
+    PerfMonitor.instance.screen = dashboardTabLabel(widget.tabs[_tabController.index]);
     final shown = ref.read(visibleDashboardTabProvider.notifier);
     if (shown.state != _tabController.index) shown.state = _tabController.index;
   }

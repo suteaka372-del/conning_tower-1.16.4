@@ -15,14 +15,23 @@ String perfReportText(PerfMonitor m) {
     '計測開始 ${m.since == null ? '-' : _time(m.since!)}',
     'フレーム ${m.frames} / 重いフレーム ${m.slowFrameCount}',
     '[重かった通信] 回数・読み込み 平均/最大・作り直し 平均/最大 (ms)',
-    for (final s in m.slowestApis.take(15))
+    for (final s in m.slowestApis.take(15)) ...[
       '${s.path} ${s.count}回 読込 ${_ms(s.parseTotal ~/ s.count)}/${_ms(s.parseMax)} 作直 ${_ms(s.buildTotal ~/ s.count)}/${_ms(s.buildMax)}',
+      if (s.stages.isNotEmpty) '  内訳 ${perfStagesText(s)}',
+    ],
     '[最近の重いフレーム] 処理/描画 (ms)',
     for (final f in m.slowFrames.reversed)
-      '${_time(f.at)} ${f.build.toStringAsFixed(1)}/${f.raster.toStringAsFixed(1)}${f.lastPath == null ? '' : ' 直前 ${f.lastPath}'}',
+      '${_time(f.at)} ${f.build.toStringAsFixed(1)}/${f.raster.toStringAsFixed(1)}'
+          '${f.screen == null ? '' : ' 画面 ${f.screen}'}${f.lastPath == null ? '' : ' 直前 ${f.lastPath}'}',
   ];
   return lines.join('\n');
 }
+
+/// 読み込みの内訳 (0.5ms 以上の段階を平均の長い順に。平均/最大)
+String perfStagesText(PerfApiStat s) => [
+      for (final (name, average, max) in s.stages)
+        if (max >= 500) '$name ${_ms(average)}/${_ms(max)}',
+    ].join('・');
 
 /// 設定 → 動作の重さ: ゲームのデータの処理と画面の作り直しにかかった時間
 class PerfPage extends StatelessWidget {
@@ -96,9 +105,13 @@ class PerfPage extends StatelessWidget {
                       CupertinoListTile(
                         title: Text(s.path, style: const TextStyle(fontSize: 14)),
                         subtitle: Text(
-                          repairText(
-                              '読み込み ${_ms(s.parseTotal ~/ s.count)} / ${_ms(s.parseMax)}・作り直し ${_ms(s.buildTotal ~/ s.count)} / ${_ms(s.buildMax)}',
-                              'Parse ${_ms(s.parseTotal ~/ s.count)} / ${_ms(s.parseMax)}, rebuild ${_ms(s.buildTotal ~/ s.count)} / ${_ms(s.buildMax)}'),
+                          [
+                            repairText(
+                                '読み込み ${_ms(s.parseTotal ~/ s.count)} / ${_ms(s.parseMax)}・作り直し ${_ms(s.buildTotal ~/ s.count)} / ${_ms(s.buildMax)}',
+                                'Parse ${_ms(s.parseTotal ~/ s.count)} / ${_ms(s.parseMax)}, rebuild ${_ms(s.buildTotal ~/ s.count)} / ${_ms(s.buildMax)}'),
+                            if (perfStagesText(s).isNotEmpty) repairText('内訳 ${perfStagesText(s)}', 'Stages ${perfStagesText(s)}'),
+                          ].join('\n'),
+                          maxLines: 4,
                         ),
                         additionalInfo: Text(repairText('${s.count}回', '${s.count}')),
                       ),
@@ -116,7 +129,12 @@ class PerfPage extends StatelessWidget {
                               'Build ${f.build.toStringAsFixed(1)} ms, raster ${f.raster.toStringAsFixed(1)} ms'),
                           style: const TextStyle(fontSize: 14),
                         ),
-                        subtitle: f.lastPath == null ? null : Text(repairText('直前の通信 ${f.lastPath}', 'After ${f.lastPath}')),
+                        subtitle: f.lastPath == null && f.screen == null
+                            ? null
+                            : Text([
+                                if (f.screen != null) repairText('画面 ${f.screen}', 'Tab ${f.screen}'),
+                                if (f.lastPath != null) repairText('直前の通信 ${f.lastPath}', 'After ${f.lastPath}'),
+                              ].join(repairText('・', ', '))),
                         additionalInfo: Text(_time(f.at)),
                       ),
                   ],

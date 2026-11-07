@@ -1,5 +1,7 @@
 import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/perf_monitor.dart';
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/providers/dashboard_controller.dart';
 import 'package:conning_tower/providers/generatable/settings_provider.dart';
 import 'package:conning_tower/widgets/cupertino_grouped_section.dart';
@@ -39,6 +41,7 @@ class _CupertinoPickerViewState extends ConsumerState<CupertinoPickerView> {
       _selectIndex = 0;
     }
     _scrollController = FixedExtentScrollController(initialItem: _selectIndex);
+    PerfMonitor.instance.screen = dashboardTabLabel(widget.items[_selectIndex]);
     super.initState();
   }
 
@@ -74,6 +77,7 @@ class _CupertinoPickerViewState extends ConsumerState<CupertinoPickerView> {
                     onSelectedItemChanged: (int value) {
                       setState(() {
                         _selectIndex = value;
+                        PerfMonitor.instance.screen = dashboardTabLabel(widget.items[value]);
                         HapticFeedback.lightImpact();
                         localStorage.setInt("dashboardIndex", _selectIndex);
                       });

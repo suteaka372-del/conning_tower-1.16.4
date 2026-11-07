@@ -1,5 +1,6 @@
 import 'package:conning_tower/models/feature/kancolle/data.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
+import 'package:flutter/material.dart' show Tab;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,6 +38,15 @@ class DashboardTabData extends AutoDisposeFamilyNotifier<KancolleData, int> {
     return ref.read(kancolleDataProvider);
   }
 }
+
+/// タブの見出し (Text・Padding・Tab の中の文字)。動作の重さの記録に使う
+String? dashboardTabLabel(Widget widget) => switch (widget) {
+      Text(:final data) => data,
+      Tab(:final text?) => text,
+      Tab(:final child?) => dashboardTabLabel(child),
+      Padding(:final child?) => dashboardTabLabel(child),
+      _ => null,
+    };
 
 /// ゲームのデータを読んで、変わったら作り直す。ダッシュボードのタブの中なら、そのタブを表示している間だけ
 KancolleData watchKancolleData(WidgetRef ref, BuildContext context) {
