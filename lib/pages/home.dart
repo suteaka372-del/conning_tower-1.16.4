@@ -7,6 +7,7 @@ import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/feature/kancolle/senka.dart';
 import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:flutter/foundation.dart';
 import 'package:conning_tower/models/data/kcwiki/kcwiki_data.dart';
@@ -124,6 +125,7 @@ class HomePageState extends ConsumerState<HomePage> {
       onInactive: KancolleData.flushQuestProgress,
       onHide: () {
         KancolleData.flushQuestProgress();
+        senkaStore.flush();
         _closeBrowserInBackground();
       },
       onShow: () {

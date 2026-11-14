@@ -38,6 +38,7 @@ import 'quest_eo_tracker.dart';
 import 'quest_fleet_condition.dart';
 import 'quest_progress.dart';
 import 'compass/compass_log.dart';
+import 'senka.dart';
 import 'compass/compass_maps.dart';
 import 'repair_timer.dart';
 import 'sea_force_base.dart';
@@ -163,6 +164,8 @@ class KancolleData {
       trackQuestProgress(path, json, params);
       // 制空権シミュレーター用に基地航空隊の状態を覚えておく
       airBaseStore.onApi(path, json, params);
+      // 戦果ビューア用に、提督経験値と EO・任務の戦果を半日ごとに記録する
+      senkaStore.onApi(path, json, seaForceBase.admiral.name);
     }
     perf.lap('任務の集計・基地');
 

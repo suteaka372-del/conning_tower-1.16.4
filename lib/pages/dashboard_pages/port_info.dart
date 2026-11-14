@@ -6,6 +6,8 @@ import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/sea_force_base.dart';
+import 'package:conning_tower/models/feature/kancolle/senka.dart';
+import 'package:conning_tower/widgets/kancolle_senka_page.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/local_navigator.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
@@ -132,6 +134,7 @@ class _PortInfoState extends ConsumerState<PortInfo>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        SenkaInfoBox(admiralName: current.seaForceBase.admiral.name),
                         InfoBox(
                           onTap: () => navigatorToCupertino(
                               context, const KancolleShipViewer()),
@@ -419,6 +422,55 @@ class ResourceInfoBox extends StatelessWidget {
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// 司令部タブの「戦果」の箱 (今月の合計と今日の分。タップで半日ごとの一覧)
+class SenkaInfoBox extends StatelessWidget {
+  const SenkaInfoBox({super.key, required this.admiralName, this.store, this.now});
+
+  final String admiralName;
+  final SenkaStore? store;
+  final DateTime Function()? now;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = this.store ?? senkaStore;
+    return ValueListenableBuilder<int>(
+      valueListenable: store.revision,
+      builder: (context, _, __) {
+        final time = (now ?? DateTime.now)();
+        final records = store.recordsOf(admiralName);
+        final month = senkaTotal(records, from: senkaMonthStart(time)).total;
+        final today = senkaTotal(records, from: senkaDayStart(time)).total;
+        return InfoBox(
+          onTap: () => navigatorToCupertino(context, SenkaPage(admiralName: admiralName, store: store, now: now)),
+          top: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(child: Text(repairText('戦果 (今月)', 'Senka (month)'))),
+              const CupertinoListTileChevron(),
+            ],
+          ),
+          bottom: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.bottomRight,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(senkaText(month), maxLines: 1, style: const TextStyle(fontSize: 26)),
+                Text(
+                  '${repairText('今日', 'Today')} +${senkaText(today)}',
+                  maxLines: 1,
+                  style: TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
