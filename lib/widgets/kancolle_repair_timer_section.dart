@@ -28,7 +28,8 @@ class _KancolleRepairTimerSectionState extends ConsumerState<KancolleRepairTimer
   void initState() {
     super.initState();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      // 裏に残っている間は表示を更新しない
+      if (mounted && dashboardTabShowing(ref, context)) setState(() {});
     });
   }
 
@@ -163,6 +164,10 @@ class _KancolleRepairTimerSectionState extends ConsumerState<KancolleRepairTimer
 
   @override
   Widget build(BuildContext context) {
+    // 裏から表示に戻ったら、すぐ今の残り時間にする
+    ref.listen(visibleDashboardTabProvider, (_, __) {
+      if (mounted && dashboardTabShowing(ref, context)) setState(() {});
+    });
     final data = watchKancolleData(ref, context);
     final squads = data.squads;
     if (widget.squadIndex < 0 || widget.squadIndex >= squads.length) return const SizedBox.shrink();

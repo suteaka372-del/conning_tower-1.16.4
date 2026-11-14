@@ -25,6 +25,28 @@ class MyOverlayColor extends WidgetStateColor {
   }
 }
 
+/// 一度開いたタブを裏に残す (戻ったときに一から作り直さないように)。
+/// 裏のタブはゲームのデータが届いても作り直さない ([DashboardTabScope])
+class _KeptAliveTab extends StatefulWidget {
+  const _KeptAliveTab({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeptAliveTab> createState() => _KeptAliveTabState();
+}
+
+class _KeptAliveTabState extends State<_KeptAliveTab> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
+
 class DashboardTabView extends ConsumerStatefulWidget {
   final int initialIndex;
 
@@ -151,7 +173,8 @@ class _DashboardTabViewState extends ConsumerState<DashboardTabView>
         body: TabBarView(
           controller: _tabController,
           children: [
-            for (final (i, content) in widget.contents.indexed) DashboardTabScope(index: i, child: content),
+            for (final (i, content) in widget.contents.indexed)
+              DashboardTabScope(index: i, child: _KeptAliveTab(child: content)),
           ],
         ),
       ),

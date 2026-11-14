@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:conning_tower/models/feature/kancolle/operation_queue.dart';
+import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
 import 'package:conning_tower/utils/local_navigator.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
@@ -90,8 +91,10 @@ class OperationScheduleState extends ConsumerState<OperationSchedule> {
   void startTimer() {
     timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       // Update the time remaining for each squad mission
+      // 裏に残っている間は表示を更新しない (表示したら次の1秒で追いつく)
+      if (!mounted || !dashboardTabShowing(ref, context)) return;
       updateTime();
-      if (mounted) setState(() {}); // Trigger a rebuild to update the UI
+      setState(() {}); // Trigger a rebuild to update the UI
     });
   }
 
@@ -106,6 +109,10 @@ class OperationScheduleState extends ConsumerState<OperationSchedule> {
 
   @override
   Widget build(BuildContext context) {
+    // 裏から表示に戻ったら、すぐ今の残り時間にする
+    ref.listen(visibleDashboardTabProvider, (_, __) {
+      if (mounted && dashboardTabShowing(ref, context)) setState(updateTime);
+    });
     final queueMap = widget.queueMap;
     final squads =
         ref.watch(kancolleDataProvider.select((data) => data.squads));

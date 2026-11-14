@@ -11,6 +11,7 @@ import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/pages/perf_page.dart';
 import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/providers/kancolle_data_provider.dart';
+import 'package:conning_tower/routes/cupertino_picker_view.dart';
 import 'package:conning_tower/utils/memo.dart';
 import 'package:conning_tower/widgets/dashboard_tab_view.dart';
 import 'package:flutter/cupertino.dart';
@@ -55,6 +56,29 @@ class _Probe extends ConsumerWidget {
     builds[name] = (builds[name] ?? 0) + 1;
     return Text(name);
   }
+}
+
+/// 作られた回数 (initState) を数える
+class _Counted extends StatefulWidget {
+  const _Counted(this.name, this.created, {required this.child});
+
+  final String name;
+  final Map<String, int> created;
+  final Widget child;
+
+  @override
+  State<_Counted> createState() => _CountedState();
+}
+
+class _CountedState extends State<_Counted> {
+  @override
+  void initState() {
+    super.initState();
+    widget.created[widget.name] = (widget.created[widget.name] ?? 0) + 1;
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 void main() {
@@ -180,6 +204,54 @@ void main() {
     await tester.pump();
     expect(builds['c'], before + 1);
     expect(identical(seen['c'], controller.state), isTrue);
+  });
+
+  testWidgets('picker dashboard keeps opened tabs alive and updates them when shown', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    localStorage = await SharedPreferences.getInstance();
+    final container = ProviderContainer(overrides: [kancolleDataProvider.overrideWith(_data)]);
+    addTearDown(container.dispose);
+    final builds = <String, int>{};
+    final seen = <String, KancolleData>{};
+    final created = <String, int>{};
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: CupertinoApp(
+        home: CupertinoPickerView(
+          wideStyle: false,
+          items: const [Text('A'), Text('B'), Text('C')],
+          children: [
+            for (final name in ['a', 'b', 'c'])
+              _Counted(name, created, child: _Probe(name, builds, seen)),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(created, {'a': 1}, reason: '開いていないタブは作らない');
+    expect(container.read(visibleDashboardTabProvider), 0);
+
+    // 1つ下 (B) へ
+    await tester.drag(find.byType(CupertinoPicker), const Offset(0, -40));
+    await tester.pumpAndSettle();
+    expect(container.read(visibleDashboardTabProvider), 1);
+    expect(created, {'a': 1, 'b': 1});
+
+    // データが届く: 表示中の B だけ作り直す
+    final beforeA = builds['a']!;
+    final beforeB = builds['b']!;
+    final controller = container.read(kancolleDataProvider.notifier);
+    controller.state = controller.state.copyWith();
+    await tester.pump();
+    expect(builds['a'], beforeA);
+    expect(builds['b'], beforeB + 1);
+
+    // A に戻る: 作り直さずに残っていて (initState は1回のまま)、最新のデータになる
+    await tester.drag(find.byType(CupertinoPicker), const Offset(0, 40));
+    await tester.pumpAndSettle();
+    expect(container.read(visibleDashboardTabProvider), 0);
+    expect(created, {'a': 1, 'b': 1});
+    expect(identical(seen['a'], controller.state), isTrue);
   });
 
   test('PerfMonitor keeps the slowest game data and slow frames', () {

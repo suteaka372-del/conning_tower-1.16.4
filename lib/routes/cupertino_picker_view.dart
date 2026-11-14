@@ -42,7 +42,19 @@ class _CupertinoPickerViewState extends ConsumerState<CupertinoPickerView> {
     }
     _scrollController = FixedExtentScrollController(initialItem: _selectIndex);
     PerfMonitor.instance.screen = dashboardTabLabel(widget.items[_selectIndex]);
+    _visited.add(_selectIndex);
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showTab());
+  }
+
+  /// 一度開いたタブ。裏に残しておき、戻ったときに一から作り直さない (タブの切り替えを軽くするため)。
+  /// 裏のタブはゲームのデータが届いても作り直さず、表示したときに最新にする
+  final Set<int> _visited = {};
+
+  void _showTab() {
+    if (!mounted) return;
+    final shown = ref.read(visibleDashboardTabProvider.notifier);
+    if (shown.state != _selectIndex) shown.state = _selectIndex;
   }
 
   @override
@@ -77,6 +89,8 @@ class _CupertinoPickerViewState extends ConsumerState<CupertinoPickerView> {
                     onSelectedItemChanged: (int value) {
                       setState(() {
                         _selectIndex = value;
+                        _visited.add(value);
+                        _showTab();
                         PerfMonitor.instance.screen = dashboardTabLabel(widget.items[value]);
                         HapticFeedback.lightImpact();
                         localStorage.setInt("dashboardIndex", _selectIndex);
@@ -89,7 +103,14 @@ class _CupertinoPickerViewState extends ConsumerState<CupertinoPickerView> {
               // const VerticalDivider(width: 1,),
               Expanded(
                 flex: 20,
-                child: widget.children[_selectIndex],
+                child: IndexedStack(
+                  index: _selectIndex,
+                  sizing: StackFit.expand,
+                  children: [
+                    for (final (i, child) in widget.children.indexed)
+                      if (_visited.contains(i)) DashboardTabScope(index: i, child: child) else const SizedBox.shrink(),
+                  ],
+                ),
               ),
             ],
           ),

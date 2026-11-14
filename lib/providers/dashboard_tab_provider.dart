@@ -39,6 +39,14 @@ class DashboardTabData extends AutoDisposeFamilyNotifier<KancolleData, int> {
   }
 }
 
+/// このウィジェットが入っているダッシュボードのタブを今表示しているか (タブの外なら常に true)。
+/// 裏に残したタブで、毎秒の表示更新などを止めるのに使う
+bool dashboardTabShowing(WidgetRef ref, BuildContext context) {
+  final tab = DashboardTabScope.maybeOf(context);
+  final shown = ref.read(visibleDashboardTabProvider);
+  return tab == null || shown == null || shown == tab;
+}
+
 /// タブの見出し (Text・Padding・Tab の中の文字)。動作の重さの記録に使う
 String? dashboardTabLabel(Widget widget) => switch (widget) {
       Text(:final data) => data,
