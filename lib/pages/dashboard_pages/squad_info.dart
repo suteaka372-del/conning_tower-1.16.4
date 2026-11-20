@@ -1,7 +1,6 @@
 import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'dart:math';
 
-import 'package:carousel_slider/carousel_slider.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
@@ -209,37 +208,9 @@ class _SquadInfoState extends ConsumerState<SquadInfo>
                                                 title: buildShipTitle(
                                                     ship, locale),
                                                 padding: _kListPadding,
-                                                leading: CarouselSlider(
-                                                  items: [
-                                                    AttributeLabel.vertical(
-                                                        label: 'Lv',
-                                                        value:
-                                                            '${ship.level}'),
-                                                    AttributeLabel.vertical(
-                                                        label: 'Lv Up',
-                                                        value:
-                                                            '${ship.exp?[1]}'),
-                                                  ],
-                                                  options: CarouselOptions(
-                                                    height: 30,
-                                                    viewportFraction: 1,
-                                                    initialPage: 0,
-                                                    enableInfiniteScroll:
-                                                        true,
-                                                    reverse: false,
-                                                    autoPlay: true,
-                                                    autoPlayInterval:
-                                                        Duration(seconds: 5),
-                                                    autoPlayAnimationDuration:
-                                                        Duration(
-                                                            milliseconds:
-                                                                800),
-                                                    autoPlayCurve:
-                                                        Curves.ease,
-                                                    scrollDirection:
-                                                        Axis.horizontal,
-                                                  ),
-                                                ),
+                                                // Lv と次のLvまでの経験値を並べて出す (以前は5秒ごとに自動で切り替えていて、
+                                                // そのアニメーションのために画面をずっと描き直し、ゲームの動きが重くなっていた)
+                                                leading: _ShipLevel(ship: ship),
                                                 leadingToTitle: 4,
                                                 onTap: () async {
                                                   await navigatorToCupertino(
@@ -628,6 +599,33 @@ class ShipConditionSupplyInfo extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 艦隊タブの艦の Lv と、次の Lv までの経験値
+class _ShipLevel extends StatelessWidget {
+  const _ShipLevel({required this.ship});
+
+  final Ship ship;
+
+  @override
+  Widget build(BuildContext context) {
+    final next = ship.exp != null && ship.exp!.length > 1 ? ship.exp![1] : null;
+    // 左の欄は狭い (28×28) ので、収まるように縮める
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Lv${ship.level}', style: const TextStyle(fontSize: 13, height: 1.1)),
+          if (next != null && next > 0)
+            Text(
+              repairText('次$next', 'next $next'),
+              style: TextStyle(fontSize: 9, height: 1.1, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
+            ),
+        ],
+      ),
     );
   }
 }

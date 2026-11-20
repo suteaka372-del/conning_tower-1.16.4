@@ -67,5 +67,14 @@ void main() {
     notifier.state = make(notifier.state.ref, QuestAssistant(ready: [Quest(id: 257, state: 2, type: 3, title: '「水雷戦隊」南西へ！')], done: []));
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('受注中の任務の編成条件'), findsOneWidget);
+
+    // Lv と次の Lv までの経験値は並べて出す (自動で切り替えるアニメーションはしない)
+    expect(find.text('Lv50'), findsNWidgets(2));
+    expect(find.text('次1'), findsNWidgets(2));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    // 何も変わらなければ、画面を描き直し続けない (1秒ごとのタイマー表示を除き、次のフレームを求めない)
+    await tester.pump(const Duration(milliseconds: 1100));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.binding.hasScheduledFrame, isFalse);
   });
 }

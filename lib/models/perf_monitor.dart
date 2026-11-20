@@ -67,7 +67,46 @@ class PerfMonitor {
   DateTime? _lastAt;
 
   /// 今表示しているダッシュボードのタブ (ダッシュボードが知らせる)
-  String? screen;
+  String? get screen => _screen;
+  String? _screen;
+  DateTime? _screenSince;
+
+  set screen(String? value) {
+    if (value == _screen) return;
+    _closeScreenTime();
+    _screen = value;
+  }
+
+  /// タブごとの描き直しの回数と、表示していた時間 (1秒あたりの描き直しの回数を出す)
+  final Map<String, int> framesByScreen = {};
+  final Map<String, Duration> timeByScreen = {};
+
+  void _closeScreenTime() {
+    final now = _now();
+    final since = _screenSince;
+    final name = _screen;
+    if (since != null && name != null) {
+      timeByScreen[name] = (timeByScreen[name] ?? Duration.zero) + now.difference(since);
+    }
+    _screenSince = now;
+  }
+
+  /// タブごとの1秒あたりの描き直しの回数 (多い順)。表示していた時間が短いタブは除く
+  List<(String, double)> get frameRates {
+    _closeScreenTime();
+    return [
+      for (final e in timeByScreen.entries)
+        if (e.value.inSeconds >= 10) (e.key, (framesByScreen[e.key] ?? 0) / e.value.inMilliseconds * 1000),
+    ]..sort((a, b) => b.$2.compareTo(a.$2));
+  }
+
+  /// 全体の1秒あたりの描き直しの回数
+  double get frameRate {
+    final start = since;
+    if (start == null) return 0;
+    final ms = _now().difference(start).inMilliseconds;
+    return ms <= 0 ? 0 : frames / ms * 1000;
+  }
 
   /// 処理中の通信の内訳 (段階ごとの時間)
   Map<String, int>? _stages;
@@ -92,6 +131,7 @@ class PerfMonitor {
     if (_started) return;
     _started = true;
     since = _now();
+    _screenSince = since;
     SchedulerBinding.instance.addTimingsCallback(recordFrames);
   }
 
@@ -101,6 +141,9 @@ class PerfMonitor {
     frames = 0;
     slowFrameCount = 0;
     since = _now();
+    framesByScreen.clear();
+    timeByScreen.clear();
+    _screenSince = since;
     revision.value++;
   }
 
@@ -131,6 +174,8 @@ class PerfMonitor {
 
   void recordFrame(double buildMs, double rasterMs) {
     frames++;
+    final name = _screen;
+    if (name != null) framesByScreen[name] = (framesByScreen[name] ?? 0) + 1;
     if (buildMs < slowFrameMs && rasterMs < slowFrameMs) return;
     slowFrameCount++;
     final now = _now();

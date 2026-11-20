@@ -14,6 +14,8 @@ String perfReportText(PerfMonitor m) {
   final lines = <String>[
     '計測開始 ${m.since == null ? '-' : _time(m.since!)}',
     'フレーム ${m.frames} / 重いフレーム ${m.slowFrameCount}',
+    '描き直し 平均 ${m.frameRate.toStringAsFixed(1)}回/秒',
+    if (m.frameRates.isNotEmpty) '  タブ別 ${perfFrameRatesText(m)}',
     '[重かった通信] 回数・読み込み 平均/最大・作り直し 平均/最大 (ms)',
     for (final s in m.slowestApis.take(15)) ...[
       '${s.path} ${s.count}回 読込 ${_ms(s.parseTotal ~/ s.count)}/${_ms(s.parseMax)} 作直 ${_ms(s.buildTotal ~/ s.count)}/${_ms(s.buildMax)}',
@@ -26,6 +28,10 @@ String perfReportText(PerfMonitor m) {
   ];
   return lines.join('\n');
 }
+
+/// タブ別の1秒あたりの描き直しの回数 (多い順)
+String perfFrameRatesText(PerfMonitor m) =>
+    [for (final (name, rate) in m.frameRates) '$name ${rate.toStringAsFixed(1)}'].join('・');
 
 /// 読み込みの内訳 (0.5ms 以上の段階を平均の長い順に。平均/最大)
 String perfStagesText(PerfApiStat s) => [
@@ -76,7 +82,7 @@ class PerfPage extends StatelessWidget {
                   header: Text(repairText('全体', 'Overview')),
                   footer: Text(
                     repairText(
-                        '1フレームが ${PerfMonitor.slowFrameMs.round()}ms を超えると、カクついて見えます。「処理」はアプリの計算、「描画」は画面に描く時間です。'
+                        '1フレームが ${PerfMonitor.slowFrameMs.round()}ms を超えると、カクついて見えます。「処理」はアプリの計算、「描画」は画面に描く時間です。「描き直し」は何も動いていなければ少ないほど良く、多いとゲームの動きを邪魔します。'
                             'ゲーム画面そのもの (ブラウザの中) の重さは測れません。記録はアプリを閉じると消えます',
                         'Frames over ${PerfMonitor.slowFrameMs.round()} ms look janky. The game page itself cannot be measured.'),
                     style: secondary,
@@ -89,6 +95,11 @@ class PerfPage extends StatelessWidget {
                     CupertinoListTile(
                       title: Text(repairText('重いフレーム', 'Slow frames')),
                       additionalInfo: Text('${m.slowFrameCount} / ${m.frames} (${rate.toStringAsFixed(1)}%)'),
+                    ),
+                    CupertinoListTile(
+                      title: Text(repairText('描き直し (1秒あたり)', 'Redraws per second')),
+                      subtitle: m.frameRates.isEmpty ? null : Text(perfFrameRatesText(m), maxLines: 4),
+                      additionalInfo: Text(m.frameRate.toStringAsFixed(1)),
                     ),
                   ],
                 ),

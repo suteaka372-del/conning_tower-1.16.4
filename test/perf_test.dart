@@ -254,6 +254,32 @@ void main() {
     expect(identical(seen['a'], controller.state), isTrue);
   });
 
+  test('redraws per second, overall and per tab', () {
+    var now = DateTime(2026, 11, 20, 12);
+    final m = PerfMonitor(now: () => now)..reset();
+    m.screen = '艦隊';
+    for (var i = 0; i < 600; i++) {
+      m.recordFrame(2, 1);
+    }
+    now = now.add(const Duration(seconds: 20)); // 艦隊: 30回/秒
+    m.screen = '遠征';
+    for (var i = 0; i < 20; i++) {
+      m.recordFrame(2, 1);
+    }
+    now = now.add(const Duration(seconds: 20)); // 遠征: 1回/秒
+    m.screen = '設定';
+    now = now.add(const Duration(seconds: 5)); // 短すぎるので出さない
+    expect(m.frameRates.map((r) => r.$1), ['艦隊', '遠征']);
+    expect(m.frameRates.first.$2, closeTo(30, 1e-9));
+    expect(m.frameRates.last.$2, closeTo(1, 1e-9));
+    expect(m.frameRate, closeTo(620 / 45, 1e-9));
+    expect(perfFrameRatesText(m), '艦隊 30.0・遠征 1.0');
+    expect(perfReportText(m), contains('描き直し 平均 13.8回/秒'));
+    expect(perfReportText(m), contains('  タブ別 艦隊 30.0・遠征 1.0'));
+    m.reset();
+    expect(m.frameRates, isEmpty);
+  });
+
   test('PerfMonitor keeps the slowest game data and slow frames', () {
     var now = DateTime(2026, 10, 25, 12);
     final m = PerfMonitor(now: () => now)..reset();

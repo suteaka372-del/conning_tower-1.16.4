@@ -26,24 +26,27 @@ class MyOverlayColor extends WidgetStateColor {
 }
 
 /// 一度開いたタブを裏に残す (戻ったときに一から作り直さないように)。
-/// 裏のタブはゲームのデータが届いても作り直さない ([DashboardTabScope])
-class _KeptAliveTab extends StatefulWidget {
-  const _KeptAliveTab({required this.child});
+/// 裏のタブはゲームのデータが届いても作り直さず ([DashboardTabScope])、アニメーションも止める
+/// (裏でアニメーションが動くと画面を描き直し続け、ゲームの動きを邪魔する)
+class _KeptAliveTab extends ConsumerStatefulWidget {
+  const _KeptAliveTab({required this.index, required this.child});
 
+  final int index;
   final Widget child;
 
   @override
-  State<_KeptAliveTab> createState() => _KeptAliveTabState();
+  ConsumerState<_KeptAliveTab> createState() => _KeptAliveTabState();
 }
 
-class _KeptAliveTabState extends State<_KeptAliveTab> with AutomaticKeepAliveClientMixin {
+class _KeptAliveTabState extends ConsumerState<_KeptAliveTab> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return widget.child;
+    final shown = ref.watch(visibleDashboardTabProvider);
+    return TickerMode(enabled: shown == null || shown == widget.index, child: widget.child);
   }
 }
 
@@ -174,7 +177,7 @@ class _DashboardTabViewState extends ConsumerState<DashboardTabView>
           controller: _tabController,
           children: [
             for (final (i, content) in widget.contents.indexed)
-              DashboardTabScope(index: i, child: _KeptAliveTab(child: content)),
+              DashboardTabScope(index: i, child: _KeptAliveTab(index: i, child: content)),
           ],
         ),
       ),
