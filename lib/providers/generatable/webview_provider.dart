@@ -558,7 +558,39 @@ class WebController extends _$WebController {
     }
   }
 
+  /// ゲーム画面の描画の回数 (1秒あたり) を、ページの requestAnimationFrame で1秒数える
+  static const _frameRateJS = '''
+return await new Promise((resolve) => {
+  let n = 0, start = 0;
+  const step = (t) => {
+    if (!start) start = t;
+    n++;
+    if (t - start < 1000) requestAnimationFrame(step);
+    else resolve(Math.round((n - 1) * 1000 / (t - start)));
+  };
+  requestAnimationFrame(step);
+  setTimeout(() => resolve(-1), 3000);
+});
+''';
+
+  Future<int?> measureGameFrameRate() async {
+    final result = await controller.callAsyncJavaScript(functionBody: _frameRateJS);
+    final value = result?.value;
+    return value is num && value >= 0 ? value.round() : null;
+  }
+
+  /// ゲームの音量 (cookie の kcs_options)。分からなければ null
+  Future<({int bgm, int se, int voice})?> kancolleVolumes() async {
+    try {
+      final cookie = await CookieManager.instance().getCookie(url: WebUri('https://www.dmm.com/'), name: 'kcs_options');
+      return parseKancolleVolumes(cookie?.value?.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> onWebviewCreate() async {
+    PerfMonitor.instance.gameFrameProbe = measureGameFrameRate;
     if (useKancolleListener) {
       //Listen Kancolle API
       WebMessageListener kcListener = WebMessageListener(

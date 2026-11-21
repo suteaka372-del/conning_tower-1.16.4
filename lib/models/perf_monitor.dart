@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -98,6 +100,30 @@ class PerfMonitor {
       for (final e in timeByScreen.entries)
         if (e.value.inSeconds >= 10) (e.key, (framesByScreen[e.key] ?? 0) / e.value.inMilliseconds * 1000),
     ]..sort((a, b) => b.$2.compareTo(a.$2));
+  }
+
+  /// ゲーム画面の描画の回数 (1秒あたり) を測る (ゲーム画面が用意する)。測れなければ null
+  Future<int?> Function()? gameFrameProbe;
+
+  /// 最後に測ったゲーム画面の描画の回数 (1秒あたり)
+  int? gameFrameRate;
+  DateTime? gameFrameAt;
+  bool measuringGame = false;
+
+  Future<void> measureGameFrameRate() async {
+    final probe = gameFrameProbe;
+    if (probe == null || measuringGame) return;
+    measuringGame = true;
+    revision.value++;
+    try {
+      gameFrameRate = await probe();
+      gameFrameAt = _now();
+    } catch (_) {
+      gameFrameRate = null;
+    } finally {
+      measuringGame = false;
+      revision.value++;
+    }
   }
 
   /// ゲーム画面 (ブラウザ) からアプリに届いた知らせの回数 (種類 → 回数)
@@ -251,5 +277,91 @@ class PerfMonitor {
       final start = frameStart ?? clock.elapsedMicroseconds;
       recordApi(path, parseMicros: parseMicros, buildMicros: clock.elapsedMicroseconds - start, stages: stages);
     });
+  }
+}
+
+/// ゲーム画面 (ブラウザ) が iOS に終了させられた1回
+class GameStop {
+  const GameStop({required this.at, this.volumes});
+
+  final DateTime at;
+
+  /// そのときのゲームの音量 (BGM・効果音・ボイス)。分からなければ null
+  final ({int bgm, int se, int voice})? volumes;
+
+  bool? get soundOn => volumes == null ? null : volumes!.bgm > 0 || volumes!.se > 0 || volumes!.voice > 0;
+
+  Map<String, dynamic> toJson() => {
+        't': at.millisecondsSinceEpoch,
+        if (volumes != null) 'v': [volumes!.bgm, volumes!.se, volumes!.voice],
+      };
+
+  static GameStop? fromJson(dynamic json) {
+    if (json is! Map || json['t'] is! int) return null;
+    final v = json['v'];
+    return GameStop(
+      at: DateTime.fromMillisecondsSinceEpoch(json['t'] as int),
+      volumes: v is List && v.length == 3 && v.every((e) => e is int)
+          ? (bgm: v[0] as int, se: v[1] as int, voice: v[2] as int)
+          : null,
+    );
+  }
+}
+
+/// ゲームの音量の設定 (cookie の kcs_options。例: vol_bgm%3D0%3Bvol_se%3D40%3Bvol_voice%3D60%3B...)
+({int bgm, int se, int voice})? parseKancolleVolumes(String? kcsOptions) {
+  if (kcsOptions == null || kcsOptions.isEmpty) return null;
+  final text = Uri.decodeComponent(kcsOptions);
+  final values = <String, int>{};
+  for (final part in text.split(';')) {
+    final kv = part.split('=');
+    if (kv.length == 2 && int.tryParse(kv[1].trim()) != null) values[kv[0].trim()] = int.parse(kv[1].trim());
+  }
+  final bgm = values['vol_bgm'], se = values['vol_se'], voice = values['vol_voice'];
+  if (bgm == null || se == null || voice == null) return null;
+  return (bgm: bgm, se: se, voice: voice);
+}
+
+/// ゲーム画面が止まった記録 (端末に保存。直近の [keep] 件)
+class GameStopLog {
+  GameStopLog({this.load, this.save});
+
+  static const keep = 30;
+
+  final String? Function()? load;
+  final void Function(String json)? save;
+
+  List<GameStop>? _stops;
+
+  /// 古い順
+  List<GameStop> get stops => _stops ??= _read();
+
+  final ValueNotifier<int> revision = ValueNotifier(0);
+
+  List<GameStop> _read() {
+    try {
+      final text = load?.call();
+      if (text == null || text.isEmpty) return [];
+      return [for (final e in jsonDecode(text) as List) if (GameStop.fromJson(e) case final stop?) stop];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void add(GameStop stop) {
+    final list = stops..add(stop);
+    if (list.length > keep) list.removeRange(0, list.length - keep);
+    try {
+      save?.call(jsonEncode([for (final s in list) s.toJson()]));
+    } catch (_) {}
+    revision.value++;
+  }
+
+  void clear() {
+    stops.clear();
+    try {
+      save?.call('[]');
+    } catch (_) {}
+    revision.value++;
   }
 }
