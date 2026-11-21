@@ -1,11 +1,25 @@
 # 署名なしのIPAを作るワークフロー
-# Actionsタブ → "Build iOS (unsigned IPA)" → "Run workflow" で実行し、
+# main に Push すると自動で始まる (アプリに関係ない変更だけのときは動かない)。
+# 手動でも Actionsタブ → "Build iOS (unsigned IPA)" → "Run workflow" で実行できる。
 # 終わったら実行結果ページ下部の Artifacts から IPA(zip) をダウンロードする。
 # iPhoneへは Sideloadly / AltStore などで自分のApple IDで署名してインストールする。
 name: Build iOS (unsigned IPA)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    # 説明書き・テスト・開発統計の集計だけの変更ではビルドしない
+    paths-ignore:
+      - '**.md'
+      - 'test/**'
+      - 'tool/**'
+      - '.github/workflows/dev_stats.yml'
+
+# 続けて Push したときは、前のビルドを止めて最新のものだけをビルドする
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
