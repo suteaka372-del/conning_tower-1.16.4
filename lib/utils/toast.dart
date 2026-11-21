@@ -1,3 +1,4 @@
+import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:toastification/toastification.dart';
@@ -5,19 +6,22 @@ import 'package:toastification/toastification.dart';
 import '../generated/l10n.dart';
 
 class Toast {
-  static show(
-          {required String title,
-          String? description,
-          Duration? autoCloseDuration,
-          ToastificationType? type}) =>
-      toastification.show(
-        type: type ?? ToastificationType.info,
-        style: ToastificationStyle.flat,
-        title: Text(title),
-        description: description != null ? Text(description) : null,
-        alignment: Alignment.topCenter,
-        autoCloseDuration: autoCloseDuration ?? const Duration(seconds: 4),
-      );
+  /// 通知を出す。残り時間の横棒は出さない
+  /// (横棒は出ている間ずっとアプリ全体を描き直し続け、ゲーム画面の上に重なるので戦闘結果の画面がカクつく)
+  static ToastificationItem show(
+      {required String title, String? description, Duration? autoCloseDuration, ToastificationType? type}) {
+    final duration = autoCloseDuration ?? const Duration(seconds: 4);
+    PerfMonitor.instance.countNotice(duration);
+    return toastification.show(
+      type: type ?? ToastificationType.info,
+      style: ToastificationStyle.flat,
+      title: Text(title),
+      description: description != null ? Text(description) : null,
+      alignment: Alignment.topCenter,
+      autoCloseDuration: duration,
+      showProgressBar: false,
+    );
+  }
 
   static showWarning({
     required String title,

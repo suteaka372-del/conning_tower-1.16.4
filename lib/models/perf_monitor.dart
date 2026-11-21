@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' show FramePhase;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -93,12 +94,12 @@ class PerfMonitor {
     _screenSince = now;
   }
 
-  /// タブごとの1秒あたりの描き直しの回数 (多い順)。表示していた時間が短いタブは除く
-  List<(String, double)> get frameRates {
+  /// タブごとの1秒あたりの描き直しの回数と、表示していた時間 (多い順)。表示していた時間が短いタブは除く
+  List<(String, double, Duration)> get frameRates {
     _closeScreenTime();
     return [
       for (final e in timeByScreen.entries)
-        if (e.value.inSeconds >= 10) (e.key, (framesByScreen[e.key] ?? 0) / e.value.inMilliseconds * 1000),
+        if (e.value.inSeconds >= 10) (e.key, (framesByScreen[e.key] ?? 0) / e.value.inMilliseconds * 1000, e.value),
     ]..sort((a, b) => b.$2.compareTo(a.$2));
   }
 
@@ -138,8 +139,49 @@ class PerfMonitor {
     }
   }
 
+  /// アプリの通知 (「戦闘終了」など) を出した回数と、通知が出ている間の描き直しの回数
+  int notices = 0;
+  int noticesInBattle = 0;
+  int noticeFrames = 0;
+  DateTime? _noticeFrom;
+  DateTime? _noticeUntil;
+
+  /// 通知を出した。[shown] は表示する時間 (出る・消える動きのぶん少し長めに見る)
+  void countNotice(Duration shown) {
+    notices++;
+    if (_battleSince != null) noticesInBattle++;
+    final now = _now();
+    final until = now.add(shown + const Duration(seconds: 1));
+    final current = _noticeUntil;
+    if (current == null || now.isAfter(current)) {
+      _noticeFrom = now;
+      _noticeUntil = until;
+    } else if (until.isAfter(current)) {
+      _noticeUntil = until;
+    }
+  }
+
+  /// [at] に通知が出ていたか
+  bool _inNotice(DateTime at) {
+    final from = _noticeFrom;
+    final until = _noticeUntil;
+    return from != null && until != null && !at.isBefore(from) && !at.isAfter(until);
+  }
+
+  /// [at] が通信を処理した直後 (1秒以内) か
+  bool _afterApi(DateTime at) {
+    final last = _lastAt;
+    if (last == null) return false;
+    final d = at.difference(last);
+    return d > const Duration(milliseconds: -100) && d <= const Duration(seconds: 1);
+  }
+
   /// 戦闘中 (戦闘開始の通信から戦闘結果まで) のアプリの描き直し
   int battleFrames = 0;
+
+  /// 戦闘中の描き直しの内訳: 通知が出ている間・通信の直後 (1秒以内)・それ以外
+  int battleFramesInNotice = 0;
+  int battleFramesAfterApi = 0;
   Duration battleTime = Duration.zero;
   DateTime? _battleSince;
 
@@ -212,7 +254,14 @@ class PerfMonitor {
     timeByScreen.clear();
     _screenSince = since;
     events.clear();
+    notices = 0;
+    noticesInBattle = 0;
+    noticeFrames = 0;
+    _noticeFrom = null;
+    _noticeUntil = null;
     battleFrames = 0;
+    battleFramesInNotice = 0;
+    battleFramesAfterApi = 0;
     battleTime = Duration.zero;
     _battleSince = null;
     revision.value++;
@@ -236,21 +285,40 @@ class PerfMonitor {
 
   void recordFrames(List<FrameTiming> timings) {
     var changed = false;
+    final now = _now();
     for (final t in timings) {
-      recordFrame(t.buildDuration.inMicroseconds / 1000, t.rasterDuration.inMicroseconds / 1000);
+      recordFrame(t.buildDuration.inMicroseconds / 1000, t.rasterDuration.inMicroseconds / 1000, at: frameTime(t, now));
       changed = true;
     }
     if (changed) revision.value++;
   }
 
-  void recordFrame(double buildMs, double rasterMs) {
+  /// フレームを描き終えた時刻。リリース版ではフレームの記録が約1秒ごとにまとめて届くので、届いた時刻ではなくこちらを使う
+  static DateTime frameTime(FrameTiming t, DateTime now) {
+    final micros = t.timestampInMicroseconds(FramePhase.rasterFinishWallTime);
+    if (micros <= 0) return now;
+    final at = DateTime.fromMicrosecondsSinceEpoch(micros);
+    // 時計がずれていそうなら届いた時刻にする
+    return at.difference(now).abs() > const Duration(seconds: 10) ? now : at;
+  }
+
+  void recordFrame(double buildMs, double rasterMs, {DateTime? at}) {
     frames++;
     final name = _screen;
     if (name != null) framesByScreen[name] = (framesByScreen[name] ?? 0) + 1;
-    if (_battleSince != null) battleFrames++;
+    final now = at ?? _now();
+    final inNotice = _inNotice(now);
+    if (inNotice) noticeFrames++;
+    if (_battleSince != null) {
+      battleFrames++;
+      if (inNotice) {
+        battleFramesInNotice++;
+      } else if (_afterApi(now)) {
+        battleFramesAfterApi++;
+      }
+    }
     if (buildMs < slowFrameMs && rasterMs < slowFrameMs) return;
     slowFrameCount++;
-    final now = _now();
     final recent = _lastAt != null && now.difference(_lastAt!) <= const Duration(seconds: 1);
     slowFrames.add(
         PerfSlowFrame(at: now, build: buildMs, raster: rasterMs, lastPath: recent ? _lastPath : null, screen: screen));

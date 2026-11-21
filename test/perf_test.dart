@@ -273,9 +273,9 @@ void main() {
     expect(m.frameRates.first.$2, closeTo(30, 1e-9));
     expect(m.frameRates.last.$2, closeTo(1, 1e-9));
     expect(m.frameRate, closeTo(620 / 45, 1e-9));
-    expect(perfFrameRatesText(m), '艦隊 30.0・遠征 1.0');
+    expect(perfFrameRatesText(m), '艦隊 30.0 (20秒)・遠征 1.0 (20秒)');
     expect(perfReportText(m), contains('描き直し 平均 13.8回/秒'));
-    expect(perfReportText(m), contains('  タブ別 艦隊 30.0・遠征 1.0'));
+    expect(perfReportText(m), contains('  タブ別 艦隊 30.0 (20秒)・遠征 1.0 (20秒)'));
     m.reset();
     expect(m.frameRates, isEmpty);
   });
@@ -311,6 +311,45 @@ void main() {
     m.reset();
     expect(m.events, isEmpty);
     expect(m.battleFrameRate, isNull);
+  });
+
+  testWidgets('counts notices and splits redraws during battles', (tester) async {
+    var now = DateTime(2026, 11, 22, 12);
+    final m = PerfMonitor(now: () => now)..reset();
+
+    // 戦闘の外の通知 (4秒 + 出る・消える動きの1秒)。フレームは描いた時刻で見る
+    m.countNotice(const Duration(seconds: 4));
+    m.recordFrame(2, 1, at: now.subtract(const Duration(seconds: 1))); // 出す前 (まとめて届いた古いフレーム)
+    m.recordFrame(2, 1, at: now.add(const Duration(seconds: 2))); // 出ている間
+    m.recordFrame(2, 1, at: now.add(const Duration(seconds: 6))); // 消えた後
+    expect((m.notices, m.noticesInBattle, m.noticeFrames), (1, 0, 1));
+
+    // 戦闘中: 通信の直後・通知の表示中・それ以外に分ける
+    now = now.add(const Duration(seconds: 30));
+    m.measureApi('/api_req_sortie/battle', () {});
+    await tester.pump(); // 作り直しのあとで通信の時刻が記録される
+    m.recordFrame(2, 1, at: now.add(const Duration(milliseconds: 500))); // 通信の直後
+    m.recordFrame(2, 1, at: now.add(const Duration(seconds: 3))); // その他
+    now = now.add(const Duration(seconds: 5));
+    m.countNotice(const Duration(seconds: 10)); // 戦闘中の通知 (前の通知の 15秒 + 1秒と重なる)
+    m.recordFrame(2, 1, at: now.add(const Duration(seconds: 1))); // 出ている間
+    m.recordFrame(2, 1, at: now.add(const Duration(seconds: 10))); // まだ出ている (長いほうに合わせる)
+    now = now.add(const Duration(seconds: 15));
+    m.measureApi('/api_req_sortie/battleresult', () {});
+    await tester.pump();
+    expect((m.battleFrames, m.battleFramesInNotice, m.battleFramesAfterApi), (4, 2, 1));
+    expect((m.notices, m.noticesInBattle, m.noticeFrames), (2, 1, 3));
+    expect(perfBattleFramesText(m), 'うち通知の表示中 2・通信の直後 1・その他 1');
+    expect(perfNoticesText(m), '通知 2回 (戦闘中 1回)・表示中の描き直し 3回');
+    final report = perfReportText(m);
+    expect(report, contains('  戦闘中 0.2回/秒 (20秒) うち通知の表示中 2・通信の直後 1・その他 1'));
+    expect(report, contains('通知 2回 (戦闘中 1回)・表示中の描き直し 3回'));
+
+    m.reset();
+    expect((m.notices, m.noticeFrames, m.battleFramesInNotice, m.battleFramesAfterApi), (0, 0, 0, 0));
+    m.recordFrame(2, 1, at: now);
+    expect(m.noticeFrames, 0);
+    expect(perfReportText(m), isNot(contains('通知')));
   });
 
   test('PerfMonitor keeps the slowest game data and slow frames', () {

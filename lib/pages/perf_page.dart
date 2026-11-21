@@ -22,7 +22,9 @@ String perfReportText(PerfMonitor m, {List<GameStop> stops = const [], double? d
     'フレーム ${m.frames} / 重いフレーム ${m.slowFrameCount}',
     '描き直し 平均 ${m.frameRate.toStringAsFixed(1)}回/秒',
     if (m.frameRates.isNotEmpty) '  タブ別 ${perfFrameRatesText(m)}',
-    if (m.battleFrameRate != null) '  戦闘中 ${m.battleFrameRate!.toStringAsFixed(1)}回/秒 (${m.battleTime.inSeconds}秒)',
+    if (m.battleFrameRate != null)
+      '  戦闘中 ${m.battleFrameRate!.toStringAsFixed(1)}回/秒 (${m.battleTime.inSeconds}秒) ${perfBattleFramesText(m)}',
+    if (m.notices > 0) perfNoticesText(m),
     if (m.events.isNotEmpty) 'ゲーム画面からの知らせ ${perfEventsText(m)}',
     '[重かった通信] 回数・読み込み 平均/最大・作り直し 平均/最大 (ms)',
     for (final s in m.slowestApis.take(15)) ...[
@@ -54,9 +56,18 @@ String gameStopText(GameStop s) {
 String perfEventsText(PerfMonitor m) =>
     ([...m.events.entries]..sort((a, b) => b.value.compareTo(a.value))).map((e) => '${e.key} ${e.value}').join('・');
 
-/// タブ別の1秒あたりの描き直しの回数 (多い順)
+/// タブ別の1秒あたりの描き直しの回数と、開いていた時間 (多い順)
 String perfFrameRatesText(PerfMonitor m) =>
-    [for (final (name, rate) in m.frameRates) '$name ${rate.toStringAsFixed(1)}'].join('・');
+    [for (final (name, rate, time) in m.frameRates) '$name ${rate.toStringAsFixed(1)} (${time.inSeconds}秒)'].join('・');
+
+/// 戦闘中の描き直しの内訳 (通知が出ている間・通信の直後・それ以外)
+String perfBattleFramesText(PerfMonitor m) =>
+    'うち通知の表示中 ${m.battleFramesInNotice}・通信の直後 ${m.battleFramesAfterApi}・その他 '
+    '${m.battleFrames - m.battleFramesInNotice - m.battleFramesAfterApi}';
+
+/// アプリの通知 (「戦闘終了」など) の回数と、出ている間の描き直し
+String perfNoticesText(PerfMonitor m) =>
+    '通知 ${m.notices}回 (戦闘中 ${m.noticesInBattle}回)・表示中の描き直し ${m.noticeFrames}回';
 
 /// 読み込みの内訳 (0.5ms 以上の段階を平均の長い順に。平均/最大)
 String perfStagesText(PerfApiStat s) => [
@@ -240,8 +251,9 @@ class PerfPage extends StatelessWidget {
                                 if (m.frameRates.isNotEmpty) perfFrameRatesText(m),
                                 if (m.battleFrameRate != null)
                                   repairText('戦闘中 ${m.battleFrameRate!.toStringAsFixed(1)}', 'In battle ${m.battleFrameRate!.toStringAsFixed(1)}'),
+                                if (m.notices > 0) perfNoticesText(m),
                               ].join('\n'),
-                              maxLines: 5),
+                              maxLines: 8),
                       additionalInfo: Text(m.frameRate.toStringAsFixed(1)),
                     ),
                   ],
