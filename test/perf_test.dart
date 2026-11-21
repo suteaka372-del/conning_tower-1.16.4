@@ -280,6 +280,39 @@ void main() {
     expect(m.frameRates, isEmpty);
   });
 
+  testWidgets('counts game page events and redraws during battles', (tester) async {
+    var now = DateTime(2026, 11, 21, 12);
+    final m = PerfMonitor(now: () => now)..reset();
+    m.countEvent('kcMessage');
+    m.countEvent('kcMessage');
+    m.countEvent('console');
+    expect(perfEventsText(m), 'kcMessage 2・console 1');
+
+    m.measureApi('/api_req_map/start', () {});
+    m.recordFrame(2, 1); // 戦闘の前
+    m.measureApi('/api_req_sortie/battle', () {});
+    for (var i = 0; i < 30; i++) {
+      m.recordFrame(2, 1);
+    }
+    now = now.add(const Duration(seconds: 10));
+    m.measureApi('/api_req_battle_midnight/battle', () {}); // 夜戦も同じ戦闘のうち
+    for (var i = 0; i < 10; i++) {
+      m.recordFrame(2, 1);
+    }
+    now = now.add(const Duration(seconds: 10));
+    m.measureApi('/api_req_sortie/battleresult', () {});
+    m.recordFrame(2, 1); // 戦闘の後
+    expect(m.battleFrames, 40);
+    expect(m.battleTime, const Duration(seconds: 20));
+    expect(m.battleFrameRate, closeTo(2, 1e-9));
+    expect(perfReportText(m), contains('  戦闘中 2.0回/秒 (20秒)'));
+    expect(perfReportText(m), contains('ゲーム画面からの知らせ kcMessage 2・console 1'));
+    await tester.pump();
+    m.reset();
+    expect(m.events, isEmpty);
+    expect(m.battleFrameRate, isNull);
+  });
+
   test('PerfMonitor keeps the slowest game data and slow frames', () {
     var now = DateTime(2026, 10, 25, 12);
     final m = PerfMonitor(now: () => now)..reset();

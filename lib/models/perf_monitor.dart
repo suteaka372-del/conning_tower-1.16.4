@@ -100,6 +100,40 @@ class PerfMonitor {
     ]..sort((a, b) => b.$2.compareTo(a.$2));
   }
 
+  /// ゲーム画面 (ブラウザ) からアプリに届いた知らせの回数 (種類 → 回数)
+  final Map<String, int> events = {};
+
+  void countEvent(String name) => events[name] = (events[name] ?? 0) + 1;
+
+  /// 戦闘中 (戦闘開始の通信から戦闘結果まで) のアプリの描き直し
+  int battleFrames = 0;
+  Duration battleTime = Duration.zero;
+  DateTime? _battleSince;
+
+  static bool _battleStart(String path) =>
+      !path.contains('result') &&
+      (path.startsWith('/api_req_sortie/') ||
+          path.startsWith('/api_req_battle_midnight/') ||
+          path.startsWith('/api_req_combined_battle/') ||
+          path.startsWith('/api_req_practice/battle') ||
+          path.startsWith('/api_req_practice/midnight_battle'));
+
+  static bool _battleEnd(String path) => path.contains('result') || path == '/api_port/port' || path.startsWith('/api_req_map/');
+
+  void _trackBattle(String path) {
+    final now = _now();
+    if (_battleStart(path)) {
+      _battleSince ??= now;
+    } else if (_battleEnd(path)) {
+      final since = _battleSince;
+      if (since != null) battleTime += now.difference(since);
+      _battleSince = null;
+    }
+  }
+
+  /// 戦闘中の1秒あたりの描き直しの回数 (戦闘の記録がなければ null)
+  double? get battleFrameRate => battleTime.inSeconds < 5 ? null : battleFrames / battleTime.inMilliseconds * 1000;
+
   /// 全体の1秒あたりの描き直しの回数
   double get frameRate {
     final start = since;
@@ -144,6 +178,10 @@ class PerfMonitor {
     framesByScreen.clear();
     timeByScreen.clear();
     _screenSince = since;
+    events.clear();
+    battleFrames = 0;
+    battleTime = Duration.zero;
+    _battleSince = null;
     revision.value++;
   }
 
@@ -176,6 +214,7 @@ class PerfMonitor {
     frames++;
     final name = _screen;
     if (name != null) framesByScreen[name] = (framesByScreen[name] ?? 0) + 1;
+    if (_battleSince != null) battleFrames++;
     if (buildMs < slowFrameMs && rasterMs < slowFrameMs) return;
     slowFrameCount++;
     final now = _now();
@@ -190,6 +229,7 @@ class PerfMonitor {
 
   /// ゲームのデータを1つ処理する。読み込みの時間と、その直後のフレームでの作り直しの時間を記録する
   void measureApi(String path, void Function() parse) {
+    _trackBattle(path);
     final clock = Stopwatch()..start();
     final stages = <String, int>{};
     _stages = stages;

@@ -7,6 +7,7 @@ import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/generated/l10n.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/models/feature/kancolle/raw_data.dart';
 import 'package:conning_tower/models/feature/web_message_data.dart';
 import 'package:conning_tower/pages/webview.dart';
@@ -512,6 +513,7 @@ class WebController extends _$WebController {
   final Set<String> _rejectedOrigins = {};
 
   void _kancolleMessageHandle(WebMessage message, String? sourceOrigin) {
+    PerfMonitor.instance.countEvent('kcMessage');
     var json = jsonDecode(message.data);
     var messageData = WebMessageData.fromJson(json);
 

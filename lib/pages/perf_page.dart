@@ -16,6 +16,8 @@ String perfReportText(PerfMonitor m) {
     'フレーム ${m.frames} / 重いフレーム ${m.slowFrameCount}',
     '描き直し 平均 ${m.frameRate.toStringAsFixed(1)}回/秒',
     if (m.frameRates.isNotEmpty) '  タブ別 ${perfFrameRatesText(m)}',
+    if (m.battleFrameRate != null) '  戦闘中 ${m.battleFrameRate!.toStringAsFixed(1)}回/秒 (${m.battleTime.inSeconds}秒)',
+    if (m.events.isNotEmpty) 'ゲーム画面からの知らせ ${perfEventsText(m)}',
     '[重かった通信] 回数・読み込み 平均/最大・作り直し 平均/最大 (ms)',
     for (final s in m.slowestApis.take(15)) ...[
       '${s.path} ${s.count}回 読込 ${_ms(s.parseTotal ~/ s.count)}/${_ms(s.parseMax)} 作直 ${_ms(s.buildTotal ~/ s.count)}/${_ms(s.buildMax)}',
@@ -28,6 +30,10 @@ String perfReportText(PerfMonitor m) {
   ];
   return lines.join('\n');
 }
+
+/// ゲーム画面からの知らせ (種類ごとの回数、多い順)
+String perfEventsText(PerfMonitor m) =>
+    ([...m.events.entries]..sort((a, b) => b.value.compareTo(a.value))).map((e) => '${e.key} ${e.value}').join('・');
 
 /// タブ別の1秒あたりの描き直しの回数 (多い順)
 String perfFrameRatesText(PerfMonitor m) =>
@@ -98,7 +104,15 @@ class PerfPage extends StatelessWidget {
                     ),
                     CupertinoListTile(
                       title: Text(repairText('描き直し (1秒あたり)', 'Redraws per second')),
-                      subtitle: m.frameRates.isEmpty ? null : Text(perfFrameRatesText(m), maxLines: 4),
+                      subtitle: m.frameRates.isEmpty && m.battleFrameRate == null
+                          ? null
+                          : Text(
+                              [
+                                if (m.frameRates.isNotEmpty) perfFrameRatesText(m),
+                                if (m.battleFrameRate != null)
+                                  repairText('戦闘中 ${m.battleFrameRate!.toStringAsFixed(1)}', 'In battle ${m.battleFrameRate!.toStringAsFixed(1)}'),
+                              ].join('\n'),
+                              maxLines: 5),
                       additionalInfo: Text(m.frameRate.toStringAsFixed(1)),
                     ),
                   ],

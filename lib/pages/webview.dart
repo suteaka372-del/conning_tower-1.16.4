@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:conning_tower/constants.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/main.dart';
+import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/providers/generatable/settings_provider.dart';
 import 'package:conning_tower/providers/generatable/webview_provider.dart';
 import 'package:conning_tower/providers/web_info_provider.dart';
@@ -95,6 +96,7 @@ class AppWebViewState extends ConsumerState<AppWebView> {
                 webController.onLoadStop(uri!);
               },
               onTitleChanged: (controller, title) {
+                PerfMonitor.instance.countEvent('title');
                 ref
                     .watch(webInfoProvider.notifier)
                     .update((state) => state.copyWith(title: title ?? ''));
@@ -103,14 +105,17 @@ class AppWebViewState extends ConsumerState<AppWebView> {
               //   debugPrint("onZoomScaleChanged $oldScale, $newScale");
               // },
               onConsoleMessage: (controller, consoleMessage) {
+                PerfMonitor.instance.countEvent('console');
                 log(consoleMessage.message);
               },
               onNavigationResponse: (controller, response) async {
+                PerfMonitor.instance.countEvent('navigation');
                 await webController.onNavigationResponse(response);
                 return NavigationResponseAction.ALLOW;
               },
               onContentSizeChanged:
                   (controller, oldContentSize, newContentSize) async {
+                PerfMonitor.instance.countEvent('contentSize');
                 debugPrint(
                     "onContentSizeChanged $oldContentSize, $newContentSize");
                 await webController.onContentSizeChanged();
@@ -125,6 +130,7 @@ class AppWebViewState extends ConsumerState<AppWebView> {
                 return null;
               },
               onProgressChanged: (controller, progress) {
+                PerfMonitor.instance.countEvent('progress');
                 setState(() {
                   this.progress = progress / 100;
                 });

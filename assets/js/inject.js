@@ -11,13 +11,10 @@ XMLHttpRequest = class HackedXMLHttpRequest extends OriginalXMLHttpRequest {
         this.responseTextHack = undefined
         this.responseXMLHack = undefined
 
+        // アプリが使うのは 'load' だけ。'loadend' でも同じデータを送っていたので、
+        // 通信のたびにゲームの中で同じ大きなデータを2回まとめて送っていた (ゲームの動きの邪魔になる)
         this.addEventListener('load', () => {
             SendToFlutter(this, 'load')
-        })
-        this.addEventListener('loadend', () => {
-            if (!this.responseType || ['json', 'text'].includes(this.responseType)) {
-                SendToFlutter(this, 'loadend')
-            }
         })
         this.addEventListener('error', () => {
             SendToFlutter(this, 'error')
