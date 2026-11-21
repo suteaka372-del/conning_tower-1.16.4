@@ -1,6 +1,7 @@
 import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/pages/perf_page.dart';
 import 'package:conning_tower/pages/webview.dart';
+import 'package:conning_tower/providers/generatable/webview_provider.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart' as intl;
@@ -56,7 +57,8 @@ void main() {
     expect(find.text('-'), findsOneWidget);
     await tester.tap(find.text('測る'));
     await tester.pump();
-    await tester.pump();
+    // 表示の更新は1秒に1回まで
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('120'), findsOneWidget);
     expect(m.gameFrameRate, 120);
     expect(find.text('止まった回数'), findsOneWidget);
@@ -65,9 +67,53 @@ void main() {
     expect(perfReportText(m, stops: log.stops), contains('ゲーム画面が止まった 1回: 11/21 23:05 音あり'));
 
     await tester.tap(find.text('消す'));
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(log.stops, isEmpty);
     expect(find.text('消す'), findsNothing);
+  });
+
+  test('only big changes of the game page size are refitted', () {
+    expect(contentSizeChangedMuch(const Size(800, 480), const Size(800, 480)), isFalse);
+    expect(contentSizeChangedMuch(const Size(800, 480), const Size(805, 482)), isFalse);
+    expect(contentSizeChangedMuch(const Size(800, 480), const Size(900, 480)), isTrue); // 横並びの幅を変えた
+    expect(contentSizeChangedMuch(const Size(800, 480), const Size(480, 800)), isTrue); // 回転
+    expect(contentSizeChangedMuch(Size.zero, const Size(800, 480)), isTrue); // 最初の表示
+    expect(contentSizeChangedMuch(Size.zero, Size.zero), isFalse);
+  });
+
+  testWidgets('the page refreshes at most once a second', (tester) async {
+    final notifier = ValueNotifier(0);
+    var builds = 0;
+    await tester.pumpWidget(ThrottledListenableBuilder(
+      listenable: notifier,
+      builder: (context) {
+        builds++;
+        return const SizedBox();
+      },
+    ));
+    expect(builds, 1);
+    for (var i = 0; i < 10; i++) {
+      notifier.value++;
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(builds, 2, reason: '最初の変化ですぐ作り直し、そのあと1秒は待つ');
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(builds, 3, reason: '待っている間に変わった分は1回にまとめる');
+    await tester.pump(const Duration(seconds: 3));
+    expect(builds, 3, reason: '変わらなければ作り直さない');
+    notifier.value++;
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(builds, 4, reason: '前の更新から1秒以上たっていれば、すぐ作り直す');
+  });
+
+  test('events during a battle are also counted separately', () {
+    final m = PerfMonitor()..reset();
+    m.countEvent('contentSize');
+    m.measureApi('/api_req_sortie/battle', () {});
+    m.countEvent('contentSize');
+    m.measureApi('/api_req_sortie/battleresult', () {});
+    m.countEvent('contentSize');
+    expect(m.events, {'contentSize': 3, 'contentSize(戦闘中)': 1});
   });
 
   testWidgets('stopped game page shows a reload button and does nothing by itself', (tester) async {

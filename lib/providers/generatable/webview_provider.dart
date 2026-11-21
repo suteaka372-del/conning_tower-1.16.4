@@ -351,7 +351,25 @@ class WebController extends _$WebController {
     // }
   }
 
-  Future<void> onContentSizeChanged() async {
+  Timer? _refitTimer;
+
+  /// ゲーム画面の大きさが変わった。
+  /// iOS で全画面にしたあとは、ページの中のスクリプト (kancolleFitIOS.js) が自分で合わせ直すので、
+  /// 大きく変わったとき (画面の回転・横並びの幅の変更など) だけ、少し待ってから1回合わせ直す。
+  /// 以前は小さな変化でも毎回合わせ直しとズームをしていて、そのたびにゲームが一瞬止まっていた
+  Future<void> onContentSizeChanged(Size oldSize, Size newSize) async {
+    if (iosFitted) {
+      if (!contentSizeChangedMuch(oldSize, newSize)) return;
+      _refitTimer?.cancel();
+      _refitTimer = Timer(const Duration(milliseconds: 300), () async {
+        PerfMonitor.instance.countEvent('refit');
+        await onScreenResize();
+        if (inKancolleWindow || inKancolleOsapiWindow) {
+          await controller.zoomBy(zoomFactor: 0.1, animated: true);
+        }
+      });
+      return;
+    }
     log('onContentSizeChanged');
     await onScreenResize();
     if (inKancolleWindow || inKancolleOsapiWindow) {
@@ -759,4 +777,10 @@ class InAppWebViewControllerNotifier
 
 class InAppWebViewControllerState {
   InAppWebViewController? controller;
+}
+
+/// ゲーム画面の大きさが、幅か高さで1割以上変わったか (それより小さい変化では合わせ直さない)
+bool contentSizeChangedMuch(Size oldSize, Size newSize) {
+  bool much(double a, double b) => a <= 0 ? b > 0 : (a - b).abs() > a * 0.1;
+  return much(oldSize.width, newSize.width) || much(oldSize.height, newSize.height);
 }

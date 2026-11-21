@@ -415,7 +415,7 @@ void main() {
     expect(find.text('直前の通信 /api_port/port'), findsOneWidget);
 
     await tester.tap(find.text('リセット'));
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('/api_port/port'), findsNothing);
     expect(find.text('まだ記録がありません'), findsNWidgets(2));
   });

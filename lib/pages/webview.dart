@@ -133,7 +133,7 @@ class AppWebViewState extends ConsumerState<AppWebView> {
                 PerfMonitor.instance.countEvent('contentSize');
                 debugPrint(
                     "onContentSizeChanged $oldContentSize, $newContentSize");
-                await webController.onContentSizeChanged();
+                await webController.onContentSizeChanged(oldContentSize, newContentSize);
               },
               shouldInterceptRequest: (
                 controller,

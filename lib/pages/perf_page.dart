@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/providers/game_stop_log.dart';
@@ -62,6 +64,71 @@ String perfStagesText(PerfApiStat s) => [
         if (max >= 500) '$name ${_ms(average)}/${_ms(max)}',
     ].join('・');
 
+/// [listenable] が変わったら作り直す。ただし [interval] に1回まで (続けて変わったら最後にまとめて1回)
+class ThrottledListenableBuilder extends StatefulWidget {
+  const ThrottledListenableBuilder(
+      {super.key, required this.listenable, required this.builder, this.interval = const Duration(seconds: 1)});
+
+  final Listenable listenable;
+  final WidgetBuilder builder;
+  final Duration interval;
+
+  @override
+  State<ThrottledListenableBuilder> createState() => _ThrottledListenableBuilderState();
+}
+
+class _ThrottledListenableBuilderState extends State<ThrottledListenableBuilder> {
+  /// 作り直してから [ThrottledListenableBuilder.interval] の間は待つ
+  Timer? _cooldown;
+
+  /// 待っている間に変わった
+  bool _pending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.listenable.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(ThrottledListenableBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.listenable != widget.listenable) {
+      oldWidget.listenable.removeListener(_changed);
+      widget.listenable.addListener(_changed);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.listenable.removeListener(_changed);
+    _cooldown?.cancel();
+    super.dispose();
+  }
+
+  void _changed() {
+    if (_cooldown != null) {
+      _pending = true;
+      return;
+    }
+    // 画面を作っている最中に知らされても困らないよう、すぐ後で作り直す
+    _cooldown = Timer(Duration.zero, _rebuild);
+  }
+
+  void _rebuild() {
+    if (!mounted) return;
+    _pending = false;
+    setState(() {});
+    _cooldown = Timer(widget.interval, () {
+      _cooldown = null;
+      if (_pending) _changed();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
+}
+
 /// 設定 → 動作の重さ: ゲームのデータの処理と画面の作り直しにかかった時間
 class PerfPage extends StatelessWidget {
   const PerfPage({super.key, this.monitor, this.stopLog});
@@ -96,9 +163,11 @@ class PerfPage extends StatelessWidget {
         ]),
       ),
       child: SafeArea(
-        child: ListenableBuilder(
+        // 記録は描き直すたびに増えるので、表示の更新は1秒に1回まで
+        // (毎回更新すると、その描き直しがまた記録されて、開いている間ずっと描き直し続けていた)
+        child: ThrottledListenableBuilder(
           listenable: Listenable.merge([m.revision, log.revision]),
-          builder: (context, _) {
+          builder: (context) {
             final apis = m.slowestApis.take(15).toList();
             final rate = m.frames == 0 ? 0 : m.slowFrameCount / m.frames * 100;
             final stops = log.stops;

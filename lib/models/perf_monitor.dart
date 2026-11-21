@@ -129,7 +129,14 @@ class PerfMonitor {
   /// ゲーム画面 (ブラウザ) からアプリに届いた知らせの回数 (種類 → 回数)
   final Map<String, int> events = {};
 
-  void countEvent(String name) => events[name] = (events[name] ?? 0) + 1;
+  /// 戦闘中に届いた知らせは「(戦闘中)」を付けて別にも数える (カクつきとの関係を見るため)
+  void countEvent(String name) {
+    events[name] = (events[name] ?? 0) + 1;
+    if (_battleSince != null) {
+      final battle = '$name(戦闘中)';
+      events[battle] = (events[battle] ?? 0) + 1;
+    }
+  }
 
   /// 戦闘中 (戦闘開始の通信から戦闘結果まで) のアプリの描き直し
   int battleFrames = 0;
