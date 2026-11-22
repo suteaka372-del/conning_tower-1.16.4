@@ -595,6 +595,22 @@ return await new Promise((resolve) => {
     return value is num && value >= 0 ? value.round() : null;
   }
 
+  /// 全画面に合わせるスクリプト (kancolleFitIOS.js) が数えている回数を読む
+  static const _fitStatsJS = '''
+const s = window.kancolleFitStats;
+if (!s) return null;
+return {minutes: (Date.now() - s.since) / 60000, mutations: s.mutations, applies: s.applies};
+''';
+
+  Future<GameFitStats?> measureFitStats() async {
+    try {
+      final result = await controller.callAsyncJavaScript(functionBody: _fitStatsJS);
+      return GameFitStats.fromJs(result?.value);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// ゲームの音量 (cookie の kcs_options)。分からなければ null
   Future<({int bgm, int se, int voice})?> kancolleVolumes() async {
     try {
@@ -607,6 +623,7 @@ return await new Promise((resolve) => {
 
   Future<void> onWebviewCreate() async {
     PerfMonitor.instance.gameFrameProbe = measureGameFrameRate;
+    if (useIOSFit) PerfMonitor.instance.gameFitProbe = measureFitStats;
     if (useKancolleListener) {
       //Listen Kancolle API
       WebMessageListener kcListener = WebMessageListener(

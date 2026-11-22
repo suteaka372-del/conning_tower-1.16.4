@@ -11,8 +11,13 @@
         observer = null,
         resizeTimer = 0,
         throttleTimer = 0,
+        mutationTimer = 0,
         lastApplyTime = 0,
         lastOrientation = 0;
+
+    // How often this script runs (read by the app's lag meter). mutations = page changes seen, applies = re-fits done
+    const stats = {since: Date.now(), mutations: 0, applies: 0};
+    _.kancolleFitStats = stats;
 
     const findTarget = () => $.getElementById('game_frame') || $.getElementById('htmlWrap') || $.getElementById('flashWrap');
 
@@ -51,6 +56,7 @@
             return;
         }
         lastApplyTime = now;
+        stats.applies++;
         hideUI();
         const html = $.documentElement,
             gs = gf.style,
@@ -116,7 +122,10 @@
             _.addEventListener('resize', onResize);
             _.addEventListener('orientationchange', onOrientationChange);
             observer = new MutationObserver(() => {
-                setTimeout(() => applyScale(false), 100);
+                stats.mutations++;
+                // One re-fit after a burst of page changes (was one timer per change)
+                clearTimeout(mutationTimer);
+                mutationTimer = setTimeout(() => applyScale(false), 100);
             });
             observer.observe($.body, {childList: true, subtree: true});
         }
@@ -130,6 +139,7 @@
         _.removeEventListener('orientationchange', onOrientationChange);
         clearTimeout(resizeTimer);
         clearTimeout(throttleTimer);
+        clearTimeout(mutationTimer);
         if (observer) observer.disconnect();
         observer = null;
         if (saved.vpContent === null) {

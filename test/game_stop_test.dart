@@ -256,4 +256,88 @@ void main() {
     expect(copied, contains('[最近の合わせ直し]'));
     await tester.pumpAndSettle();
   });
+  testWidgets('the game draw rate is logged every few minutes, only while the game is shown', (tester) async {
+    var now = DateTime(2026, 11, 23, 0, 18);
+    final m = PerfMonitor(now: () => now)..reset();
+    var fps = 60;
+    var shown = true;
+    var power = const DevicePower(lowPower: false, thermal: 0);
+    var fit = 0;
+    m.gameFrameProbe = () async => fps;
+    m.powerProbe = () async => power;
+    m.gameShownProbe = () => shown;
+    m.gameFitProbe = () async => GameFitStats(minutes: 30, mutations: 900 + fit, applies: 12 + fit);
+
+    await m.sampleGame();
+    now = now.add(PerfMonitor.gameSampleInterval);
+    m.measureApi('/api_req_sortie/battle', () {});
+    fps = 52;
+    await m.sampleGame();
+    now = now.add(PerfMonitor.gameSampleInterval);
+    // ゲーム画面が隠れている間は自動では測らない
+    shown = false;
+    await m.sampleGame();
+    expect(m.gameSamples.length, 2);
+    // 「測る」を押したときは隠れていても測り、隠れていたと残す
+    fps = 24;
+    power = const DevicePower(lowPower: false, thermal: 1);
+    fit = 30;
+    await m.measureGameFrameRate();
+    expect(m.gameSamples.length, 3);
+    expect(m.gameFrameShown, isFalse);
+    expect(m.gameFit!.mutations, 930);
+
+    expect(m.gameSamples.map(gameSampleText), [
+      '00:18 60 普通',
+      '00:20 52 普通 戦闘中',
+      '00:22 24 少し熱い 戦闘中 隠れていた 手動',
+    ]);
+    // まとめは見えていた分だけ
+    expect(gameSamplesSummary(m), '平均 56・最低 52 (00:20 普通)・2回');
+    expect(gameFitText(m.gameFit!), 'ゲームを読み込んでから 30分・ページの変化 930回 (31.0回/分)・合わせ 42回');
+
+    final report = perfReportText(m, displayRate: 120);
+    expect(report, contains('ゲーム画面の描画 24回/秒 (画面の最大 120・測ったとき 低電力モード オフ・本体の熱さ 少し熱い・ゲーム画面は隠れていた)'));
+    expect(report, contains('ページの中の合わせ直し ゲームを読み込んでから 30分'));
+    expect(report, contains('[ゲームの描画の記録] 2分おき (「測る」の分も) 平均 56・最低 52 (00:20 普通)・2回\n'
+        '00:18 60 普通・00:20 52 普通 戦闘中・00:22 24 少し熱い 戦闘中 隠れていた 手動'));
+
+    // 古い記録は捨てる。リセットで消える
+    shown = true;
+    for (var i = 0; i < PerfMonitor.keepGameSamples + 5; i++) {
+      await m.sampleGame();
+    }
+    expect(m.gameSamples.length, PerfMonitor.keepGameSamples);
+    m.reset();
+    expect(m.gameSamples, isEmpty);
+    expect(perfReportText(m), isNot(contains('[ゲームの描画の記録]')));
+    await tester.pump();
+  });
+
+  test('fit counters from the page', () {
+    expect(GameFitStats.fromJs({'minutes': 12.5, 'mutations': 300, 'applies': 7})!.applies, 7);
+    expect(GameFitStats.fromJs({'minutes': 1, 'mutations': 2.0, 'applies': 3})!.mutations, 2);
+    expect(GameFitStats.fromJs(null), isNull);
+    expect(GameFitStats.fromJs({'minutes': 'x', 'mutations': 1, 'applies': 1}), isNull);
+    final empty = PerfMonitor()..reset();
+    expect(gameSamplesSummary(empty), '見えていたときの記録なし');
+  });
+
+  testWidgets('the page shows the auto log and the fit counters', (tester) async {
+    final m = PerfMonitor()..reset();
+    m.gameFrameProbe = () async => 58;
+    m.gameShownProbe = () => true;
+    m.gameFitProbe = () async => const GameFitStats(minutes: 10, mutations: 50, applies: 3);
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(CupertinoApp(home: PerfPage(monitor: m, stopLog: GameStopLog())));
+    expect(find.text('自動の記録 (2分おき)'), findsOneWidget);
+    expect(find.text('ページの中の合わせ直し'), findsNothing);
+    m.sampleGame();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('平均 58・最低 58'), findsOneWidget);
+    expect(find.text('ページの中の合わせ直し'), findsOneWidget);
+    expect(find.textContaining('ページの変化 50回 (5.0回/分)'), findsOneWidget);
+  });
 }

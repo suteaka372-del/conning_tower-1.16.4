@@ -119,6 +119,9 @@ class HomePageState extends ConsumerState<HomePage> {
 
     _initPackageInfo();
     // 動作の重さの計測 (設定の「動作の重さ」で見られる)
+    // ゲーム画面が見えている = アプリが表に出ていて、ツール・設定などの画面 (selectedIndex 1 以降) に隠れていない
+    PerfMonitor.instance.gameShownProbe =
+        () => mounted && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed && selectedIndex == 0;
     PerfMonitor.instance.start();
     // 任務の進捗はまとめて保存しているので、アプリが裏に回るときに書き出す
     _lifecycle = AppLifecycleListener(

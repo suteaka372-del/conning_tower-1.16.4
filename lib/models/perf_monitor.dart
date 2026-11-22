@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show FramePhase, Size;
 
@@ -49,6 +50,56 @@ class PerfSlowFrame {
   final String? screen;
 
   double get worst => build > raster ? build : raster;
+}
+
+/// ゲーム画面の描画を測った1回
+class GameFrameSample {
+  const GameFrameSample({
+    required this.at,
+    required this.fps,
+    this.power,
+    this.inBattle = false,
+    this.manual = false,
+    this.shown,
+  });
+
+  final DateTime at;
+
+  /// 1秒あたりの描画の回数
+  final int fps;
+
+  /// そのときの低電力モードと本体の熱さ (分からなければ null)
+  final DevicePower? power;
+
+  final bool inBattle;
+
+  /// 「測る」を押した (false なら自動)
+  final bool manual;
+
+  /// ゲーム画面が見えていたか (分からなければ null)
+  final bool? shown;
+}
+
+/// ゲーム画面の中で、全画面に合わせるスクリプト (kancolleFitIOS.js) が動いた回数 (ゲームのページを読み込んでから)
+class GameFitStats {
+  const GameFitStats({required this.minutes, required this.mutations, required this.applies});
+
+  /// ページを読み込んでからの時間 (分)
+  final double minutes;
+
+  /// ページの中身が変わったと知らされた回数
+  final int mutations;
+
+  /// 実際に合わせ直した回数
+  final int applies;
+
+  /// ページの中のスクリプトが返した値から作る。形が違えば null
+  static GameFitStats? fromJs(dynamic value) {
+    if (value is! Map) return null;
+    final minutes = value['minutes'], mutations = value['mutations'], applies = value['applies'];
+    if (minutes is! num || mutations is! num || applies is! num) return null;
+    return GameFitStats(minutes: minutes.toDouble(), mutations: mutations.toInt(), applies: applies.toInt());
+  }
 }
 
 /// ゲーム画面の合わせ直し1回 (大きさが大きく変わったとき)
@@ -134,16 +185,50 @@ class PerfMonitor {
   /// ゲーム画面の描画を測ったときの低電力モードと本体の熱さ
   DevicePower? gameFramePower;
 
-  Future<void> measureGameFrameRate() async {
+  /// ゲーム画面が見えているか (アプリが表に出ていて、ツールや設定の画面に隠れていない)。分からなければ null
+  bool Function()? gameShownProbe;
+
+  /// 最後に測ったとき、ゲーム画面が見えていたか (隠れているとブラウザが描画を落とすので、数字が低く出る)
+  bool? gameFrameShown;
+
+  /// ゲーム画面の中の、全画面に合わせるスクリプトが動いた回数を聞く (ゲーム画面が用意する)
+  Future<GameFitStats?> Function()? gameFitProbe;
+
+  /// 最後に聞いた、全画面に合わせるスクリプトが動いた回数 (ゲームのページを読み込んでから)
+  GameFitStats? gameFit;
+
+  /// ゲーム画面の描画の記録 (自動で [gameSampleInterval] ごとに測った分と、「測る」を押した分。古い順)
+  static const gameSampleInterval = Duration(minutes: 2);
+  static const keepGameSamples = 60;
+  final List<GameFrameSample> gameSamples = [];
+  Timer? _sampleTimer;
+
+  /// ゲーム画面の描画の回数を1秒かけて測る。[manual] は「測る」を押したとき
+  Future<void> measureGameFrameRate({bool manual = true}) async {
     final probe = gameFrameProbe;
     if (probe == null || measuringGame) return;
     measuringGame = true;
     revision.value++;
     try {
+      final shown = gameShownProbe?.call();
       final power = powerProbe?.call() ?? Future<DevicePower?>.value();
       gameFrameRate = await probe();
       gameFramePower = await power;
+      gameFrameShown = shown;
       gameFrameAt = _now();
+      final fps = gameFrameRate;
+      if (fps != null) {
+        gameSamples.add(GameFrameSample(
+          at: gameFrameAt!,
+          fps: fps,
+          power: gameFramePower,
+          inBattle: _battleSince != null,
+          manual: manual,
+          shown: shown,
+        ));
+        if (gameSamples.length > keepGameSamples) gameSamples.removeAt(0);
+      }
+      gameFit = await (gameFitProbe?.call() ?? Future<GameFitStats?>.value()) ?? gameFit;
     } catch (_) {
       gameFrameRate = null;
       gameFramePower = null;
@@ -151,6 +236,17 @@ class PerfMonitor {
       measuringGame = false;
       revision.value++;
     }
+  }
+
+  /// 自動の記録1回分。アプリが裏にあるときや、ゲーム画面が隠れているときは測らない (低く出るので)
+  Future<void> sampleGame() async {
+    if (gameShownProbe?.call() == false) return;
+    await measureGameFrameRate(manual: false);
+  }
+
+  /// [gameSampleInterval] ごとに自動で測り始める (アプリの起動時に1回)
+  void startGameSampling() {
+    _sampleTimer ??= Timer.periodic(gameSampleInterval, (_) => sampleGame());
   }
 
   /// ゲーム画面 (ブラウザ) からアプリに届いた知らせの回数 (種類 → 回数)
@@ -318,6 +414,7 @@ class PerfMonitor {
     since = _now();
     _screenSince = since;
     powerProbe ??= readDevicePower;
+    startGameSampling();
     SchedulerBinding.instance.addTimingsCallback(recordFrames);
   }
 
@@ -332,6 +429,7 @@ class PerfMonitor {
     _screenSince = since;
     events.clear();
     refits.clear();
+    gameSamples.clear();
     browserEvents.clear();
     _browserTime = Duration.zero;
     _browserSince = _browserShown ? since : null;

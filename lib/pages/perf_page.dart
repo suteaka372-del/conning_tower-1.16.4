@@ -20,7 +20,9 @@ String perfReportText(PerfMonitor m, {List<GameStop> stops = const [], double? d
     if (powerNow != null) 'コピーしたとき ${powerNow.label}',
     if (m.gameFrameRate != null || displayRate != null)
       'ゲーム画面の描画 ${m.gameFrameRate ?? '-'}回/秒 (画面の最大 ${displayRate?.round() ?? '-'}'
-          '${m.gameFramePower == null ? '' : '・測ったとき ${m.gameFramePower!.label}'})',
+          '${m.gameFramePower == null ? '' : '・測ったとき ${m.gameFramePower!.label}'}'
+          '${m.gameFrameShown == false ? '・ゲーム画面は隠れていた' : ''})',
+    if (m.gameFit != null) 'ページの中の合わせ直し ${gameFitText(m.gameFit!)}',
     if (stops.isNotEmpty) 'ゲーム画面が止まった ${stops.length}回: ${[for (final s in stops.reversed.take(10)) gameStopText(s)].join('、')}',
     'フレーム ${m.frames} / 重いフレーム ${m.slowFrameCount}',
     '描き直し 平均 ${m.frameRate.toStringAsFixed(1)}回/秒',
@@ -31,6 +33,11 @@ String perfReportText(PerfMonitor m, {List<GameStop> stops = const [], double? d
     if (m.browserTime.inSeconds > 0) perfBrowserText(m),
     if (m.events.isNotEmpty) 'ゲーム画面からの知らせ ${perfEventsText(m)}',
     if (m.browserEvents.isNotEmpty) '漫画のブラウザからの知らせ ${perfBrowserEventsText(m)}',
+    if (m.gameSamples.isNotEmpty) ...[
+      '[ゲームの描画の記録] ${PerfMonitor.gameSampleInterval.inMinutes}分おき (「測る」の分も) ${gameSamplesSummary(m)}',
+      for (var i = 0; i < m.gameSamples.length; i += 4)
+        m.gameSamples.skip(i).take(4).map(gameSampleText).join('・'),
+    ],
     '[重かった通信] 回数・読み込み 平均/最大・作り直し 平均/最大 (ms)',
     for (final s in m.slowestApis.take(15)) ...[
       '${s.path} ${s.count}回 読込 ${_ms(s.parseTotal ~/ s.count)}/${_ms(s.parseMax)} 作直 ${_ms(s.buildTotal ~/ s.count)}/${_ms(s.buildMax)}',
@@ -84,6 +91,34 @@ String perfBattleFramesText(PerfMonitor m) =>
 /// アプリの通知 (「戦闘終了」など) の回数と、出ている間の描き直し
 String perfNoticesText(PerfMonitor m) =>
     '通知 ${m.notices}回 (戦闘中 ${m.noticesInBattle}回)・表示中の描き直し ${m.noticeFrames}回';
+
+String _hm(DateTime t) => _time(t).substring(0, 5);
+
+/// ゲームの描画の記録1回 (00:18 60 普通 戦闘中)
+String gameSampleText(GameFrameSample s) => [
+      '${_hm(s.at)} ${s.fps}',
+      s.power?.thermalLabel ?? '-',
+      if (s.power?.lowPower == true) '低電力',
+      if (s.inBattle) '戦闘中',
+      if (s.shown == false) '隠れていた',
+      if (s.manual) '手動',
+    ].join(' ');
+
+/// ゲームの描画の記録のまとめ (ゲーム画面が見えていた分だけ。隠れていると低く出るので)
+String gameSamplesSummary(PerfMonitor m) {
+  final shown = m.gameSamples.where((s) => s.shown != false).toList();
+  if (shown.isEmpty) return '見えていたときの記録なし';
+  final average = shown.fold(0, (sum, s) => sum + s.fps) / shown.length;
+  final lowest = shown.reduce((a, b) => b.fps < a.fps ? b : a);
+  return '平均 ${average.round()}・最低 ${lowest.fps} (${_hm(lowest.at)} ${lowest.power?.thermalLabel ?? '-'})・${shown.length}回';
+}
+
+/// 全画面に合わせるスクリプトが動いた回数
+String gameFitText(GameFitStats f) {
+  final perMinute = f.minutes <= 0 ? 0 : f.mutations / f.minutes;
+  return 'ゲームを読み込んでから ${f.minutes.round()}分・ページの変化 ${f.mutations}回 '
+      '(${perMinute.toStringAsFixed(1)}回/分)・合わせ ${f.applies}回';
+}
 
 /// 漫画のブラウザを開いていた時間と、その間の描き直し
 String perfBrowserText(PerfMonitor m) {
@@ -221,7 +256,10 @@ class PerfPage extends StatelessWidget {
                     repairText(
                         'ゲーム画面 (ブラウザ) が1秒に何回描いているか。ゲームを表示したまま「測る」を押してください (1秒かかります)。'
                             'Safari はふつう 60 回までに抑えています。低電力モードのときや本体が熱いときは 30 回に落ちることがあります (Safari でも同じ)。'
+                            'ツールや歯車の設定の画面でゲームが隠れていると、低く出ます。'
+                            '自動の記録は、ゲーム画面が見えているときだけ数分おきに1秒ずつ測ったものです。'
                             '合わせ直しは、ゲーム画面の大きさが大きく変わって合わせ直した記録です。'
+                            'ページの中の合わせ直しは、ゲームのページの中で全画面に合わせる仕掛けが動いた回数です。'
                             '止まった記録は、iOS がゲーム画面を終了させた回数と、そのときの音量です (アプリを閉じても残ります)',
                         'How many times per second the game page draws (Safari usually caps pages at 60). '
                             'Stops are times iOS closed the game page, with the volume at that time.'),
@@ -233,6 +271,8 @@ class PerfPage extends StatelessWidget {
                       subtitle: Text([
                         repairText('画面の最大 ${displayRate.round()}', 'Display max ${displayRate.round()}'),
                         if (m.gameFramePower != null) m.gameFramePower!.label,
+                        if (m.gameFrameShown == false)
+                          repairText('ゲーム画面が隠れていたので低く出ています', 'The game page was hidden, so this is low'),
                       ].join('\n')),
                       additionalInfo: Text(m.measuringGame ? '…' : '${m.gameFrameRate ?? '-'}'),
                       trailing: CupertinoButton(
@@ -242,6 +282,25 @@ class PerfPage extends StatelessWidget {
                         child: Text(repairText('測る', 'Measure'), style: const TextStyle(fontSize: 14)),
                       ),
                     ),
+                    CupertinoListTile(
+                      title: Text(repairText(
+                          '自動の記録 (${PerfMonitor.gameSampleInterval.inMinutes}分おき)',
+                          'Auto log (every ${PerfMonitor.gameSampleInterval.inMinutes} min)')),
+                      subtitle: m.gameSamples.isEmpty
+                          ? null
+                          : Text(
+                              [
+                                gameSamplesSummary(m),
+                                for (final s in m.gameSamples.reversed.take(5)) gameSampleText(s),
+                              ].join('\n'),
+                              maxLines: 6),
+                      additionalInfo: Text('${m.gameSamples.length}'),
+                    ),
+                    if (m.gameFit != null)
+                      CupertinoListTile(
+                        title: Text(repairText('ページの中の合わせ直し', 'Fits inside the page')),
+                        subtitle: Text(gameFitText(m.gameFit!), maxLines: 3),
+                      ),
                     CupertinoListTile(
                       title: Text(repairText('合わせ直し', 'Refits')),
                       subtitle: m.refits.isEmpty
