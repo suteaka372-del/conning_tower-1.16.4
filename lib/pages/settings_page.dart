@@ -19,6 +19,35 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../utils/toast.dart';
 
+/// 「戦闘終了」の通知のオン・オフ (大破の警告はいつも出る)
+class BattleEndNoticeTile extends StatefulWidget {
+  const BattleEndNoticeTile({super.key});
+
+  @override
+  State<BattleEndNoticeTile> createState() => _BattleEndNoticeTileState();
+}
+
+class _BattleEndNoticeTileState extends State<BattleEndNoticeTile> {
+  bool _on = NoticeSettings.battleEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoListTile(
+      title: Text(repairText('戦闘終了の通知', 'Battle finished notice')),
+      subtitle: Text(repairText('オフでも振動で知らせます。大破の警告はいつも出ます', 'Off: vibration only. Heavy damage warnings always show.')),
+      leading: const DummyIcon(color: CupertinoColors.systemRed, icon: CupertinoIcons.bell),
+      trailing: CupertinoSwitch(
+        value: _on,
+        onChanged: (value) {
+          HapticFeedback.lightImpact();
+          setState(() => _on = value);
+          NoticeSettings.setBattleEnd(value);
+        },
+      ),
+    );
+  }
+}
+
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -207,6 +236,7 @@ class SettingsPageState extends ConsumerState<SettingsPage> {
                 },
               ),
             ),
+            const BattleEndNoticeTile(),
             CupertinoListTile(
               title: Text(repairText('動作の重さ', 'Performance')),
               subtitle: Text(repairText('ゲームのデータの処理と画面の作り直しにかかった時間', 'Time spent on game data and redraws')),
