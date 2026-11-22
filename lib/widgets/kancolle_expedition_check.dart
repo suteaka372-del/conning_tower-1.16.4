@@ -1,10 +1,12 @@
 import 'package:conning_tower/providers/dashboard_tab_provider.dart';
 import 'package:conning_tower/helper.dart';
 import 'package:conning_tower/models/data/kcsapi/start2/get_data_entity.dart';
+import 'package:conning_tower/models/feature/kancolle/data.dart';
 import 'package:conning_tower/models/feature/kancolle/expedition_check.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/feature/kancolle/ship.dart';
 import 'package:conning_tower/models/feature/kancolle/squad.dart';
+import 'package:conning_tower/utils/memo.dart';
 import 'package:conning_tower/widgets/components/edge_insets_constants.dart';
 import 'package:conning_tower/widgets/scroll_view.dart';
 import 'package:flutter/cupertino.dart';
@@ -84,12 +86,35 @@ class ExpeditionResultCell extends StatelessWidget {
 }
 
 /// 遠征タブの「遠征チェック」 (CustomScrollView に入れる Sliver)
-class ExpeditionCheckSliver extends ConsumerWidget {
+class ExpeditionCheckSliver extends ConsumerStatefulWidget {
   const ExpeditionCheckSliver({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ExpeditionCheckSliver> createState() => _ExpeditionCheckSliverState();
+}
+
+class _ExpeditionCheckSliverState extends ConsumerState<ExpeditionCheckSliver> {
+  /// 一覧 (約60行) は、第2〜第4艦隊・遠征の一覧・表示の明るさ・言語が前と同じなら、前に作ったものをそのまま使う。
+  /// 以前はゲームのデータが届くたびに全行を作り直していて、母港に戻ったときなどに 20ms ほどかかっていた
+  final _list = Memo<Widget>();
+
+  @override
+  Widget build(BuildContext context) {
     final data = watchKancolleData(ref, context);
+    final missionInfo = data.dataInfo.missionInfo;
+    final fleetKeys = [
+      for (final number in kExpeditionFleetNumbers) expeditionFleetKey(expeditionFleetShips(data.squads, number))
+    ];
+    return _list.of([
+      missionInfo,
+      data.dataInfo.mapAreaInfo,
+      ...fleetKeys,
+      CupertinoTheme.brightnessOf(context),
+      repairText('ja', 'en'), // 表示の言語
+    ], () => _buildList(context, data));
+  }
+
+  Widget _buildList(BuildContext context, KancolleData data) {
     final missionInfo = data.dataInfo.missionInfo;
     final secondaryStyle = TextStyle(
       fontSize: 12,

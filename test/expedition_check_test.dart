@@ -341,5 +341,50 @@ void main() {
       expect(find.text('A4 南西方面連絡線哨戒'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+    testWidgets('the list is reused when other game data changes, and redone when a fleet changes', (tester) async {
+      await pumpTab(tester, const Size(393, 900));
+      final container = ProviderScope.containerOf(tester.element(find.byType(OperationPage)));
+      void push() {
+        final old = container.read(kancolleDataProvider);
+        container.read(kancolleDataProvider.notifier).state = KancolleData(
+          queue: old.queue,
+          squads: [for (final s in old.squads) Squad(id: s.id, name: s.name, ships: [...s.ships])],
+          seaForceBase: old.seaForceBase,
+          fleet: old.fleet,
+          ref: old.ref,
+          dataInfo: old.dataInfo,
+          battleInfo: old.battleInfo,
+        );
+      }
+
+      final before = tester.widget(find.byType(ExpeditionCheckRow).first);
+      expect(find.text('○81%'), findsWidgets);
+      // 母港の資源などが変わっただけ (第2〜第4艦隊は同じ) なら、一覧は前のものをそのまま使う
+      push();
+      await tester.pump();
+      expect(identical(tester.widget(find.byType(ExpeditionCheckRow).first), before), isTrue);
+
+      // 艦娘のデータがその場で書き換わっても (キラが消えた)、中身で比べて作り直す
+      for (final ship in container.read(kancolleDataProvider).squads[1].ships) {
+        ship.condition = 40;
+      }
+      push();
+      await tester.pump();
+      expect(identical(tester.widget(find.byType(ExpeditionCheckRow).first), before), isFalse);
+      expect(find.text('○81%'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  test('fleet key changes only with what the checks use', () {
+    final a = [ship(_cl, condition: 53), ship(_dd, equipment: [drum()])];
+    final key = expeditionFleetKey(a);
+    expect(expeditionFleetKey([...a]), key);
+    a[0].condition = 49;
+    expect(expeditionFleetKey(a), isNot(key));
+    final key2 = expeditionFleetKey(a);
+    a[1].equipment!.first.level = 3;
+    expect(expeditionFleetKey(a), isNot(key2));
+    expect(expeditionFleetKey(const []), '');
   });
 }

@@ -165,6 +165,41 @@ class PerfMonitor {
     }
   }
 
+  /// 漫画のブラウザからアプリに届いた知らせの回数 (種類 → 回数。戦闘中は「(戦闘中)」付きでも数える)
+  final Map<String, int> browserEvents = {};
+
+  void countBrowserEvent(String name) {
+    browserEvents[name] = (browserEvents[name] ?? 0) + 1;
+    if (_battleSince != null) {
+      final battle = '$name(戦闘中)';
+      browserEvents[battle] = (browserEvents[battle] ?? 0) + 1;
+    }
+  }
+
+  /// 漫画のブラウザを表示している間の時間と描き直し (戦闘中の分も別に数える)
+  bool _browserShown = false;
+  DateTime? _browserSince;
+  Duration _browserTime = Duration.zero;
+  int browserFrames = 0;
+  int battleFramesWithBrowser = 0;
+
+  bool get browserShown => _browserShown;
+
+  /// 漫画のブラウザを表示している (画面が知らせる)
+  set browserShown(bool value) {
+    if (value == _browserShown) return;
+    final now = _now();
+    if (_browserShown && _browserSince != null) _browserTime += now.difference(_browserSince!);
+    _browserShown = value;
+    _browserSince = value ? now : null;
+  }
+
+  /// 漫画のブラウザを表示していた時間 (今表示していればその分も)
+  Duration get browserTime {
+    final since = _browserSince;
+    return _browserShown && since != null ? _browserTime + _now().difference(since) : _browserTime;
+  }
+
   /// ゲーム画面の枠の大きさ (ゲーム画面が作られるたびに知らせる)
   Size? gameViewSize;
 
@@ -297,6 +332,11 @@ class PerfMonitor {
     _screenSince = since;
     events.clear();
     refits.clear();
+    browserEvents.clear();
+    _browserTime = Duration.zero;
+    _browserSince = _browserShown ? since : null;
+    browserFrames = 0;
+    battleFramesWithBrowser = 0;
     notices = 0;
     noticesInBattle = 0;
     noticeFrames = 0;
@@ -352,8 +392,10 @@ class PerfMonitor {
     final now = at ?? _now();
     final inNotice = _inNotice(now);
     if (inNotice) noticeFrames++;
+    if (_browserShown) browserFrames++;
     if (_battleSince != null) {
       battleFrames++;
+      if (_browserShown) battleFramesWithBrowser++;
       if (inNotice) {
         battleFramesInNotice++;
       } else if (_afterApi(now)) {

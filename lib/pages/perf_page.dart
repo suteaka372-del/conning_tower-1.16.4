@@ -28,7 +28,9 @@ String perfReportText(PerfMonitor m, {List<GameStop> stops = const [], double? d
     if (m.battleFrameRate != null)
       '  戦闘中 ${m.battleFrameRate!.toStringAsFixed(1)}回/秒 (${m.battleTime.inSeconds}秒) ${perfBattleFramesText(m)}',
     if (m.notices > 0) perfNoticesText(m),
+    if (m.browserTime.inSeconds > 0) perfBrowserText(m),
     if (m.events.isNotEmpty) 'ゲーム画面からの知らせ ${perfEventsText(m)}',
+    if (m.browserEvents.isNotEmpty) '漫画のブラウザからの知らせ ${perfBrowserEventsText(m)}',
     '[重かった通信] 回数・読み込み 平均/最大・作り直し 平均/最大 (ms)',
     for (final s in m.slowestApis.take(15)) ...[
       '${s.path} ${s.count}回 読込 ${_ms(s.parseTotal ~/ s.count)}/${_ms(s.parseMax)} 作直 ${_ms(s.buildTotal ~/ s.count)}/${_ms(s.buildMax)}',
@@ -82,6 +84,18 @@ String perfBattleFramesText(PerfMonitor m) =>
 /// アプリの通知 (「戦闘終了」など) の回数と、出ている間の描き直し
 String perfNoticesText(PerfMonitor m) =>
     '通知 ${m.notices}回 (戦闘中 ${m.noticesInBattle}回)・表示中の描き直し ${m.noticeFrames}回';
+
+/// 漫画のブラウザを開いていた時間と、その間の描き直し
+String perfBrowserText(PerfMonitor m) {
+  final seconds = m.browserTime.inMilliseconds / 1000;
+  final rate = seconds <= 0 ? 0 : m.browserFrames / seconds;
+  return '漫画のブラウザ 開いていた ${seconds.round()}秒・その間の描き直し ${rate.toStringAsFixed(1)}回/秒'
+      ' (戦闘中に開いていた間 ${m.battleFramesWithBrowser}回)';
+}
+
+/// 漫画のブラウザからの知らせ (種類ごとの回数、多い順)
+String perfBrowserEventsText(PerfMonitor m) =>
+    ([...m.browserEvents.entries]..sort((a, b) => b.value.compareTo(a.value))).map((e) => '${e.key} ${e.value}').join('・');
 
 /// 読み込みの内訳 (0.5ms 以上の段階を平均の長い順に。平均/最大)
 String perfStagesText(PerfApiStat s) => [
@@ -280,8 +294,9 @@ class PerfPage extends StatelessWidget {
                                 if (m.battleFrameRate != null)
                                   repairText('戦闘中 ${m.battleFrameRate!.toStringAsFixed(1)}', 'In battle ${m.battleFrameRate!.toStringAsFixed(1)}'),
                                 if (m.notices > 0) perfNoticesText(m),
+                                if (m.browserTime.inSeconds > 0) perfBrowserText(m),
                               ].join('\n'),
-                              maxLines: 8),
+                              maxLines: 10),
                       additionalInfo: Text(m.frameRate.toStringAsFixed(1)),
                     ),
                   ],

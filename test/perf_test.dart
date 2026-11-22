@@ -352,6 +352,49 @@ void main() {
     expect(perfReportText(m), isNot(contains('通知')));
   });
 
+  testWidgets('counts the manga browser: time open, redraws and its events', (tester) async {
+    var now = DateTime(2026, 11, 22, 23, 0);
+    final m = PerfMonitor(now: () => now)..reset();
+    m.recordFrame(2, 1); // 閉じている間
+    m.browserShown = true;
+    m.countBrowserEvent('progress');
+    for (var i = 0; i < 20; i++) {
+      m.recordFrame(2, 1);
+    }
+    now = now.add(const Duration(seconds: 10));
+    // 開いたまま戦闘
+    m.measureApi('/api_req_sortie/battle', () {});
+    m.countBrowserEvent('history');
+    for (var i = 0; i < 5; i++) {
+      m.recordFrame(2, 1);
+    }
+    now = now.add(const Duration(seconds: 10));
+    m.measureApi('/api_req_sortie/battleresult', () {});
+    m.browserShown = false;
+    m.recordFrame(2, 1); // 閉じた後
+    now = now.add(const Duration(seconds: 30));
+    expect(m.browserTime, const Duration(seconds: 20));
+    expect((m.browserFrames, m.battleFramesWithBrowser), (25, 5));
+    expect(perfBrowserText(m), '漫画のブラウザ 開いていた 20秒・その間の描き直し 1.3回/秒 (戦闘中に開いていた間 5回)');
+    expect(perfBrowserEventsText(m), 'progress 1・history 1・history(戦闘中) 1');
+    final report = perfReportText(m);
+    expect(report, contains('漫画のブラウザ 開いていた 20秒'));
+    expect(report, contains('漫画のブラウザからの知らせ progress 1・history 1'));
+
+    // 開いている間は今の分も時間に入る。リセットしたら開いたところから数え直す
+    m.browserShown = true;
+    now = now.add(const Duration(seconds: 5));
+    expect(m.browserTime, const Duration(seconds: 25));
+    m.reset();
+    now = now.add(const Duration(seconds: 3));
+    expect(m.browserTime, const Duration(seconds: 3));
+    expect((m.browserFrames, m.battleFramesWithBrowser, m.browserEvents.isEmpty), (0, 0, true));
+    m.browserShown = false;
+    final fresh = PerfMonitor(now: () => now)..reset();
+    expect(perfReportText(fresh), isNot(contains('漫画のブラウザ')));
+    await tester.pump();
+  });
+
   test('PerfMonitor keeps the slowest game data and slow frames', () {
     var now = DateTime(2026, 10, 25, 12);
     final m = PerfMonitor(now: () => now)..reset();

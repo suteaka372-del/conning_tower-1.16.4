@@ -3,6 +3,7 @@ import 'dart:developer';
 
 import 'package:conning_tower/main.dart';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
+import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/widgets/mini_game.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -164,13 +165,16 @@ class _SideBrowserState extends ConsumerState<SideBrowser> {
               _publishNav();
             },
             onProgressChanged: (controller, progress) {
+              PerfMonitor.instance.countBrowserEvent('progress');
               if (mounted) setState(() => _progress = progress / 100);
             },
             onLoadStop: (controller, url) {
+              PerfMonitor.instance.countBrowserEvent('loadStop');
               if (url != null) SideBrowser.saveLastUrl(url.toString());
               _updateNavigationState();
             },
             onUpdateVisitedHistory: (controller, url, isReload) {
+              PerfMonitor.instance.countBrowserEvent('history');
               if (url != null) SideBrowser.saveLastUrl(url.toString());
               _updateNavigationState();
             },

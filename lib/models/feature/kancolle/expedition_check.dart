@@ -605,6 +605,17 @@ double? expeditionGreatSuccessRate(int missionId, ExpeditionFleet fleet) {
 }
 
 /// 遠征に成功するかを判定する
+/// 遠征の判定に使う値 (艦種・Lv・cond・火力/対空/対潜/索敵・装備・搭載数) だけをつないだ文字列。
+/// 同じなら判定も同じ。艦娘のデータはその場で書き換わることがあるので、中身で比べるのに使う
+String expeditionFleetKey(List<Ship> ships) => ships.map(_expeditionShipKey).join(';');
+
+String _expeditionShipKey(Ship s) {
+  String equipment(Equipment e) => '${e.type}/${e.level}/${e.asw}';
+  return '${s.shipType},${s.level},${s.condition},${s.attack?.firstOrNull},${s.antiAircraft?.firstOrNull},'
+      '${s.antiSubmarine?.firstOrNull},${s.scout?.firstOrNull},${s.onSlot},'
+      '${[...?s.equipment].map(equipment).join('|')}+${[...?s.exEquipment].map(equipment).join('|')}';
+}
+
 ExpeditionCheckResult checkExpedition(int missionId, List<Ship> ships, {String? missionName}) {
   final requirements = expeditionRequirements(missionId, missionName: missionName);
   final fleet = ExpeditionFleet(ships);

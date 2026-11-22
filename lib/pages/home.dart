@@ -389,6 +389,9 @@ class HomePageState extends ConsumerState<HomePage> {
     bool useStack = size.width <= 1024;
     final settings = ref.watch(settingsProvider);
     final miniGame = ref.watch(miniGameProvider);
+    // 「動作の重さ」用: 漫画のブラウザを表示している間の描き直しを数える
+    PerfMonitor.instance.browserShown =
+        sidePanel == SidePanel.browser && !_browserSuspended && settings.showDashboardInHome;
 
     if (setUp) {
       setUp = false;
