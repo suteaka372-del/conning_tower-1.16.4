@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'dart:ui' show FramePhase;
+import 'dart:ui' show FramePhase, Size;
 
+import 'package:conning_tower/utils/device_power.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -48,6 +49,22 @@ class PerfSlowFrame {
   final String? screen;
 
   double get worst => build > raster ? build : raster;
+}
+
+/// ゲーム画面の合わせ直し1回 (大きさが大きく変わったとき)
+class PerfRefit {
+  const PerfRefit({required this.at, required this.from, required this.to, this.view, this.inBattle = false});
+
+  final DateTime at;
+
+  /// ゲーム画面の中身の大きさ (変わる前 → 後)
+  final Size from;
+  final Size to;
+
+  /// そのときのゲーム画面の枠 (アプリの中での大きさ)。枠が変わっていなければ、中身が自分で変わった
+  final Size? view;
+
+  final bool inBattle;
 }
 
 /// 動作の重さを測る (設定の「動作の重さ」で見る。記録はアプリを閉じると消える)
@@ -111,16 +128,25 @@ class PerfMonitor {
   DateTime? gameFrameAt;
   bool measuringGame = false;
 
+  /// 低電力モードと本体の熱さを聞く (iOS 以外では null を返す)
+  Future<DevicePower?> Function()? powerProbe;
+
+  /// ゲーム画面の描画を測ったときの低電力モードと本体の熱さ
+  DevicePower? gameFramePower;
+
   Future<void> measureGameFrameRate() async {
     final probe = gameFrameProbe;
     if (probe == null || measuringGame) return;
     measuringGame = true;
     revision.value++;
     try {
+      final power = powerProbe?.call() ?? Future<DevicePower?>.value();
       gameFrameRate = await probe();
+      gameFramePower = await power;
       gameFrameAt = _now();
     } catch (_) {
       gameFrameRate = null;
+      gameFramePower = null;
     } finally {
       measuringGame = false;
       revision.value++;
@@ -137,6 +163,21 @@ class PerfMonitor {
       final battle = '$name(戦闘中)';
       events[battle] = (events[battle] ?? 0) + 1;
     }
+  }
+
+  /// ゲーム画面の枠の大きさ (ゲーム画面が作られるたびに知らせる)
+  Size? gameViewSize;
+
+  /// 最近の合わせ直し (古い順、[keepRefits] 件まで)
+  static const keepRefits = 10;
+  final List<PerfRefit> refits = [];
+
+  /// ゲーム画面を合わせ直した (中身の大きさ [from] → [to])
+  void recordRefit(Size from, Size to) {
+    countEvent('refit');
+    refits.add(PerfRefit(at: _now(), from: from, to: to, view: gameViewSize, inBattle: _battleSince != null));
+    if (refits.length > keepRefits) refits.removeAt(0);
+    revision.value++;
   }
 
   /// アプリの通知 (「戦闘終了」など) を出した回数と、通知が出ている間の描き直しの回数
@@ -241,6 +282,7 @@ class PerfMonitor {
     _started = true;
     since = _now();
     _screenSince = since;
+    powerProbe ??= readDevicePower;
     SchedulerBinding.instance.addTimingsCallback(recordFrames);
   }
 
@@ -254,6 +296,7 @@ class PerfMonitor {
     timeByScreen.clear();
     _screenSince = since;
     events.clear();
+    refits.clear();
     notices = 0;
     noticesInBattle = 0;
     noticeFrames = 0;
@@ -357,18 +400,22 @@ class PerfMonitor {
 
 /// ゲーム画面 (ブラウザ) が iOS に終了させられた1回
 class GameStop {
-  const GameStop({required this.at, this.volumes});
+  const GameStop({required this.at, this.volumes, this.power});
 
   final DateTime at;
 
   /// そのときのゲームの音量 (BGM・効果音・ボイス)。分からなければ null
   final ({int bgm, int se, int voice})? volumes;
 
+  /// そのときの低電力モードと本体の熱さ。分からなければ null
+  final DevicePower? power;
+
   bool? get soundOn => volumes == null ? null : volumes!.bgm > 0 || volumes!.se > 0 || volumes!.voice > 0;
 
   Map<String, dynamic> toJson() => {
         't': at.millisecondsSinceEpoch,
         if (volumes != null) 'v': [volumes!.bgm, volumes!.se, volumes!.voice],
+        if (power != null) 'p': power!.toJson(),
       };
 
   static GameStop? fromJson(dynamic json) {
@@ -379,6 +426,7 @@ class GameStop {
       volumes: v is List && v.length == 3 && v.every((e) => e is int)
           ? (bgm: v[0] as int, se: v[1] as int, voice: v[2] as int)
           : null,
+      power: DevicePower.fromJson(json['p']),
     );
   }
 }

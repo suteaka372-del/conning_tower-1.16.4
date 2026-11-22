@@ -447,6 +447,9 @@ void main() {
     final m = PerfMonitor()..reset();
     m.recordApi('/api_port/port', parseMicros: 12000, buildMicros: 3000);
     m.recordFrame(30, 2);
+    // 項目が増えたので、下の「重いフレーム」まで一度に見える高さにする
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(CupertinoApp(home: PerfPage(monitor: m)));
     expect(find.text('/api_port/port'), findsOneWidget);
     expect(find.text('読み込み 12.0 / 12.0・作り直し 3.0 / 3.0'), findsOneWidget);

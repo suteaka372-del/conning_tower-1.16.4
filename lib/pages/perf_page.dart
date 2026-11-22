@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:conning_tower/models/feature/kancolle/repair_timer.dart';
 import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/providers/game_stop_log.dart';
+import 'package:conning_tower/utils/device_power.dart';
 import 'package:conning_tower/utils/toast.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -13,11 +14,13 @@ String _time(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 
 /// 記録をテキストにする (コピーして貼り付けられるように)
-String perfReportText(PerfMonitor m, {List<GameStop> stops = const [], double? displayRate}) {
+String perfReportText(PerfMonitor m, {List<GameStop> stops = const [], double? displayRate, DevicePower? powerNow}) {
   final lines = <String>[
     '計測開始 ${m.since == null ? '-' : _time(m.since!)}',
+    if (powerNow != null) 'コピーしたとき ${powerNow.label}',
     if (m.gameFrameRate != null || displayRate != null)
-      'ゲーム画面の描画 ${m.gameFrameRate ?? '-'}回/秒 (画面の最大 ${displayRate?.round() ?? '-'})',
+      'ゲーム画面の描画 ${m.gameFrameRate ?? '-'}回/秒 (画面の最大 ${displayRate?.round() ?? '-'}'
+          '${m.gameFramePower == null ? '' : '・測ったとき ${m.gameFramePower!.label}'})',
     if (stops.isNotEmpty) 'ゲーム画面が止まった ${stops.length}回: ${[for (final s in stops.reversed.take(10)) gameStopText(s)].join('、')}',
     'フレーム ${m.frames} / 重いフレーム ${m.slowFrameCount}',
     '描き直し 平均 ${m.frameRate.toStringAsFixed(1)}回/秒',
@@ -30,6 +33,10 @@ String perfReportText(PerfMonitor m, {List<GameStop> stops = const [], double? d
     for (final s in m.slowestApis.take(15)) ...[
       '${s.path} ${s.count}回 読込 ${_ms(s.parseTotal ~/ s.count)}/${_ms(s.parseMax)} 作直 ${_ms(s.buildTotal ~/ s.count)}/${_ms(s.buildMax)}',
       if (perfStagesText(s).isNotEmpty) '  内訳 ${perfStagesText(s)}',
+    ],
+    if (m.refits.isNotEmpty) ...[
+      '[最近の合わせ直し] 中身の大きさ 前→後・ゲーム画面の枠',
+      for (final r in m.refits.reversed) perfRefitText(r),
     ],
     '[最近の重いフレーム] 処理/描画 (ms)',
     for (final f in m.slowFrames.reversed)
@@ -49,8 +56,15 @@ String gameStopText(GameStop s) {
     false => repairText('ミュート', 'muted'),
     null => repairText('音量不明', 'volume unknown'),
   };
-  return '${_date(s.at)} $sound${v == null || s.soundOn == false ? '' : repairText(' BGM${v.bgm}・効果音${v.se}・ボイス${v.voice}', ' BGM ${v.bgm}, SE ${v.se}, voice ${v.voice}')}';
+  return '${_date(s.at)} $sound${v == null || s.soundOn == false ? '' : repairText(' BGM${v.bgm}・効果音${v.se}・ボイス${v.voice}', ' BGM ${v.bgm}, SE ${v.se}, voice ${v.voice}')}'
+      '${s.power == null ? '' : ' ${s.power!.label}'}';
 }
+
+String _size(Size s) => '${s.width.round()}×${s.height.round()}';
+
+/// 合わせ直し1回 (11:04:35 1200×720→1450×870 枠 834×500 戦闘中)
+String perfRefitText(PerfRefit r) =>
+    '${_time(r.at)} ${_size(r.from)}→${_size(r.to)}${r.view == null ? '' : ' 枠 ${_size(r.view!)}'}${r.inBattle ? ' 戦闘中' : ''}';
 
 /// ゲーム画面からの知らせ (種類ごとの回数、多い順)
 String perfEventsText(PerfMonitor m) =>
@@ -161,8 +175,10 @@ class PerfPage extends StatelessWidget {
           CupertinoButton(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(repairText('コピー', 'Copy')),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: perfReportText(m, stops: log.stops, displayRate: displayRate)));
+            onPressed: () async {
+              final power = await (m.powerProbe?.call() ?? Future<DevicePower?>.value());
+              await Clipboard.setData(
+                  ClipboardData(text: perfReportText(m, stops: log.stops, displayRate: displayRate, powerNow: power)));
               Toast.showSuccess(title: repairText('コピーしました', 'Copied'));
             },
           ),
@@ -190,7 +206,9 @@ class PerfPage extends StatelessWidget {
                   footer: Text(
                     repairText(
                         'ゲーム画面 (ブラウザ) が1秒に何回描いているか。ゲームを表示したまま「測る」を押してください (1秒かかります)。'
-                            'Safari はふつう 60 回までに抑えています。止まった記録は、iOS がゲーム画面を終了させた回数と、そのときの音量です (アプリを閉じても残ります)',
+                            'Safari はふつう 60 回までに抑えています。低電力モードのときや本体が熱いときは 30 回に落ちることがあります (Safari でも同じ)。'
+                            '合わせ直しは、ゲーム画面の大きさが大きく変わって合わせ直した記録です。'
+                            '止まった記録は、iOS がゲーム画面を終了させた回数と、そのときの音量です (アプリを閉じても残ります)',
                         'How many times per second the game page draws (Safari usually caps pages at 60). '
                             'Stops are times iOS closed the game page, with the volume at that time.'),
                     style: secondary,
@@ -198,7 +216,10 @@ class PerfPage extends StatelessWidget {
                   children: [
                     CupertinoListTile(
                       title: Text(repairText('描画 (1秒あたり)', 'Draws per second')),
-                      subtitle: Text(repairText('画面の最大 ${displayRate.round()}', 'Display max ${displayRate.round()}')),
+                      subtitle: Text([
+                        repairText('画面の最大 ${displayRate.round()}', 'Display max ${displayRate.round()}'),
+                        if (m.gameFramePower != null) m.gameFramePower!.label,
+                      ].join('\n')),
                       additionalInfo: Text(m.measuringGame ? '…' : '${m.gameFrameRate ?? '-'}'),
                       trailing: CupertinoButton(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -206,6 +227,13 @@ class PerfPage extends StatelessWidget {
                         onPressed: m.gameFrameProbe == null || m.measuringGame ? null : m.measureGameFrameRate,
                         child: Text(repairText('測る', 'Measure'), style: const TextStyle(fontSize: 14)),
                       ),
+                    ),
+                    CupertinoListTile(
+                      title: Text(repairText('合わせ直し', 'Refits')),
+                      subtitle: m.refits.isEmpty
+                          ? null
+                          : Text([for (final r in m.refits.reversed.take(5)) perfRefitText(r)].join('\n'), maxLines: 5),
+                      additionalInfo: Text('${m.events['refit'] ?? 0}'),
                     ),
                     CupertinoListTile(
                       title: Text(repairText('止まった回数', 'Stopped')),

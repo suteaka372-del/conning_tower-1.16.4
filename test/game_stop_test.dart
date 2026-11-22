@@ -2,9 +2,13 @@ import 'package:conning_tower/models/perf_monitor.dart';
 import 'package:conning_tower/pages/perf_page.dart';
 import 'package:conning_tower/pages/webview.dart';
 import 'package:conning_tower/providers/generatable/webview_provider.dart';
+import 'package:conning_tower/utils/device_power.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:toastification/toastification.dart';
 
 void main() {
   final t0 = DateTime(2026, 11, 21, 23, 5);
@@ -129,5 +133,127 @@ void main() {
     expect(reloads, 1);
     expect(tester.takeException(), isNull);
   });
-}
 
+  test('stops remember low power mode and heat', () {
+    const power = DevicePower(lowPower: true, thermal: 2);
+    final stop = GameStop(at: t0, volumes: (bgm: 30, se: 40, voice: 60), power: power);
+    expect(gameStopText(stop), '11/21 23:05 音あり BGM30・効果音40・ボイス60 低電力モード オン・本体の熱さ 熱い');
+    final restored = GameStop.fromJson(stop.toJson())!;
+    expect(restored.power, power);
+    expect(GameStop.fromJson(GameStop(at: t0).toJson())!.power, isNull);
+    // 前の版で保存した記録 (p がない) も読める
+    expect(GameStop.fromJson({'t': t0.millisecondsSinceEpoch, 'v': [0, 0, 0]})!.power, isNull);
+  });
+
+  test('measuring the game page also notes low power mode and heat', () async {
+    var now = DateTime(2026, 11, 22, 12);
+    final m = PerfMonitor(now: () => now)..reset();
+    m.gameFrameProbe = () async => 30;
+    m.powerProbe = () async => const DevicePower(lowPower: true, thermal: 0);
+    await m.measureGameFrameRate();
+    expect(m.gameFrameRate, 30);
+    expect(m.gameFramePower, const DevicePower(lowPower: true, thermal: 0));
+    final report = perfReportText(m, displayRate: 120, powerNow: const DevicePower(lowPower: false, thermal: 2));
+    expect(report, contains('コピーしたとき 低電力モード オフ・本体の熱さ 熱い'));
+    expect(report, contains('ゲーム画面の描画 30回/秒 (画面の最大 120・測ったとき 低電力モード オン・本体の熱さ 普通)'));
+
+    // 聞けないとき (iOS 以外) は今までどおり
+    m.powerProbe = () async => null;
+    await m.measureGameFrameRate();
+    expect(perfReportText(m, displayRate: 120), contains('ゲーム画面の描画 30回/秒 (画面の最大 120)'));
+    expect(perfReportText(m), isNot(contains('コピーしたとき')));
+  });
+
+  testWidgets('refits are listed with sizes, the frame size and battles', (tester) async {
+    var now = DateTime(2026, 11, 22, 11, 4, 35);
+    final m = PerfMonitor(now: () => now)..reset();
+    m.gameViewSize = const Size(834, 500);
+    m.recordRefit(const Size(1200, 720), const Size(1450, 870));
+    m.measureApi('/api_req_sortie/battle', () {});
+    now = now.add(const Duration(seconds: 30));
+    m.gameViewSize = null;
+    m.recordRefit(const Size(1450, 870), const Size(1200.4, 719.6));
+    expect(m.events['refit'], 2);
+    expect(m.events['refit(戦闘中)'], 1);
+    expect(m.refits.map((r) => r.inBattle), [false, true]);
+    expect(perfRefitText(m.refits.first), '11:04:35 1200×720→1450×870 枠 834×500');
+    expect(perfRefitText(m.refits.last), '11:05:05 1450×870→1200×720 戦闘中');
+    final report = perfReportText(m);
+    expect(report, contains('[最近の合わせ直し] 中身の大きさ 前→後・ゲーム画面の枠\n11:05:05 1450×870→1200×720 戦闘中\n11:04:35 1200×720→1450×870 枠 834×500'));
+
+    for (var i = 0; i < 15; i++) {
+      m.recordRefit(Size.zero, const Size(100, 60));
+    }
+    expect(m.refits.length, PerfMonitor.keepRefits);
+    m.reset();
+    expect(m.refits, isEmpty);
+    expect(perfReportText(m), isNot(contains('合わせ直し')));
+    await tester.pump();
+  });
+
+  testWidgets('a burst of size changes is refitted once, from the first size to the last', (tester) async {
+    final calls = <(Size, Size)>[];
+    final refit = RefitDebouncer(onRefit: (from, to) => calls.add((from, to)));
+
+    // 小さな変化は合わせ直さない
+    refit.sizeChanged(const Size(800, 480), const Size(805, 482));
+    await tester.pump(const Duration(seconds: 1));
+    expect(calls, isEmpty);
+
+    // 大きな変化が続いたら、最後の変化から 300ms 待って1回だけ
+    refit.sizeChanged(const Size(800, 480), const Size(1000, 600));
+    await tester.pump(const Duration(milliseconds: 200));
+    refit.sizeChanged(const Size(1000, 600), const Size(1200, 720));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(calls, isEmpty);
+    expect(refit.pending, isTrue);
+    // 待っている間の小さな変化も、最後の大きさになる
+    refit.sizeChanged(const Size(1200, 720), const Size(1205, 723));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(calls, [(const Size(800, 480), const Size(1205, 723))]);
+    expect(refit.pending, isFalse);
+
+    // 次の変化は新しい組
+    refit.sizeChanged(const Size(1205, 723), const Size(800, 480));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(calls.last, (const Size(1205, 723), const Size(800, 480)));
+
+    refit.sizeChanged(const Size(800, 480), const Size(1200, 720));
+    refit.cancel();
+    await tester.pump(const Duration(seconds: 1));
+    expect(calls.length, 2);
+  });
+
+  testWidgets('the page lists refits and copies the low power mode and heat', (tester) async {
+    final m = PerfMonitor()..reset();
+    m.gameViewSize = const Size(834, 500);
+    m.recordRefit(const Size(1200, 720), const Size(1450, 870));
+    m.gameFrameProbe = () async => 30;
+    m.powerProbe = () async => const DevicePower(lowPower: true, thermal: 1);
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String?;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await tester.pumpWidget(ToastificationWrapper(
+      child: MaterialApp(home: CupertinoPageScaffold(child: PerfPage(monitor: m, stopLog: GameStopLog()))),
+    ));
+    expect(find.text('合わせ直し'), findsOneWidget);
+    expect(find.textContaining('1200×720→1450×870 枠 834×500'), findsOneWidget);
+
+    await tester.tap(find.text('測る'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('低電力モード オン・本体の熱さ 少し熱い'), findsOneWidget);
+
+    await tester.tap(find.text('コピー'));
+    for (var i = 0; i < 25; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    expect(copied, contains('コピーしたとき 低電力モード オン・本体の熱さ 少し熱い'));
+    expect(copied, contains('測ったとき 低電力モード オン・本体の熱さ 少し熱い'));
+    expect(copied, contains('[最近の合わせ直し]'));
+    await tester.pumpAndSettle();
+  });
+}

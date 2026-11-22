@@ -351,7 +351,13 @@ class WebController extends _$WebController {
     // }
   }
 
-  Timer? _refitTimer;
+  late final RefitDebouncer _refit = RefitDebouncer(onRefit: (from, to) async {
+    PerfMonitor.instance.recordRefit(from, to);
+    await onScreenResize();
+    if (inKancolleWindow || inKancolleOsapiWindow) {
+      await controller.zoomBy(zoomFactor: 0.1, animated: true);
+    }
+  });
 
   /// ゲーム画面の大きさが変わった。
   /// iOS で全画面にしたあとは、ページの中のスクリプト (kancolleFitIOS.js) が自分で合わせ直すので、
@@ -359,15 +365,7 @@ class WebController extends _$WebController {
   /// 以前は小さな変化でも毎回合わせ直しとズームをしていて、そのたびにゲームが一瞬止まっていた
   Future<void> onContentSizeChanged(Size oldSize, Size newSize) async {
     if (iosFitted) {
-      if (!contentSizeChangedMuch(oldSize, newSize)) return;
-      _refitTimer?.cancel();
-      _refitTimer = Timer(const Duration(milliseconds: 300), () async {
-        PerfMonitor.instance.countEvent('refit');
-        await onScreenResize();
-        if (inKancolleWindow || inKancolleOsapiWindow) {
-          await controller.zoomBy(zoomFactor: 0.1, animated: true);
-        }
-      });
+      _refit.sizeChanged(oldSize, newSize);
       return;
     }
     log('onContentSizeChanged');
@@ -783,4 +781,41 @@ class InAppWebViewControllerState {
 bool contentSizeChangedMuch(Size oldSize, Size newSize) {
   bool much(double a, double b) => a <= 0 ? b > 0 : (a - b).abs() > a * 0.1;
   return much(oldSize.width, newSize.width) || much(oldSize.height, newSize.height);
+}
+
+/// ゲーム画面の大きさが大きく変わったら、[delay] 待ってから1回だけ [onRefit] を呼ぶ。
+/// 続けて変わったら最後の変化から待ち直す。[onRefit] には最初の大きさと最後の大きさを渡す
+class RefitDebouncer {
+  RefitDebouncer({required this.onRefit, this.delay = const Duration(milliseconds: 300)});
+
+  final void Function(Size from, Size to) onRefit;
+  final Duration delay;
+
+  Timer? _timer;
+  Size? _from;
+  Size? _to;
+
+  bool get pending => _timer?.isActive ?? false;
+
+  void sizeChanged(Size oldSize, Size newSize) {
+    // 待っている間の小さな変化も、最後の大きさとして覚えておく
+    if (pending) _to = newSize;
+    if (!contentSizeChangedMuch(oldSize, newSize)) return;
+    if (!pending) _from = oldSize;
+    _to = newSize;
+    _timer?.cancel();
+    _timer = Timer(delay, () {
+      final from = _from ?? oldSize;
+      final to = _to ?? newSize;
+      _from = null;
+      _to = null;
+      onRefit(from, to);
+    });
+  }
+
+  void cancel() {
+    _timer?.cancel();
+    _from = null;
+    _to = null;
+  }
 }

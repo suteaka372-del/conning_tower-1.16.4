@@ -11,6 +11,7 @@ import 'package:conning_tower/providers/game_stop_log.dart';
 import 'package:conning_tower/providers/generatable/settings_provider.dart';
 import 'package:conning_tower/providers/generatable/webview_provider.dart';
 import 'package:conning_tower/providers/web_info_provider.dart';
+import 'package:conning_tower/utils/device_power.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -33,8 +34,9 @@ class AppWebViewState extends ConsumerState<AppWebView> {
   Future<void> _onGameStopped(WebController webController) async {
     PerfMonitor.instance.countEvent('stopped');
     if (mounted) setState(() => gameStopped = true);
-    final volumes = await webController.kancolleVolumes();
-    gameStopLog.add(GameStop(at: DateTime.now(), volumes: volumes));
+    final at = DateTime.now();
+    final (volumes, power) = await (webController.kancolleVolumes(), readDevicePower()).wait;
+    gameStopLog.add(GameStop(at: at, volumes: volumes, power: power));
   }
 
   static get defaultUA {
@@ -77,6 +79,8 @@ class AppWebViewState extends ConsumerState<AppWebView> {
     return AspectRatio(
       aspectRatio: 5 / 3,
       child: LayoutBuilder(builder: (context, constraints) {
+        // 「動作の重さ」の合わせ直しの記録用 (枠が変わったのか、中身が自分で変わったのか)
+        PerfMonitor.instance.gameViewSize = constraints.biggest;
         // debugPrint("rate: ${(constraints.maxWidth / constraints.maxHeight)/(5/3)}");
         return Stack(
           alignment: Alignment.bottomCenter,
