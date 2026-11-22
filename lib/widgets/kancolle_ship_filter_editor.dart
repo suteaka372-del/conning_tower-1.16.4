@@ -189,8 +189,12 @@ class _KancolleShipFilterEditorState extends State<KancolleShipFilterEditor> {
                   '並び替え (最大${ShipFilterPreset.maxSortKeys}つ、上から順に優先)',
                   'Sort (up to ${ShipFilterPreset.maxSortKeys}, top has priority)')),
               footer: Text(repairText(
-                  '第1キーが同じ値の艦は、第2キー、第3キーの順に並べます',
-                  'Ships with the same 1st key value are ordered by the 2nd, then 3rd key')),
+                  '第1キーが同じ値の艦は、第2キー、第3キーの順に並べます。'
+                      '艦娘順はゲームの並び順 (艦型ごと)、ID は手に入れた順の番号です。'
+                      'ゲームの「Lv順」と同じ並びにするには「Lv → 艦娘順 昇順 → ID 昇順」にします (Lv の向きはお好みで)',
+                  'Ships with the same 1st key value are ordered by the 2nd, then 3rd key. '
+                      'Ship order follows the game (by class); ID is the order you got them. '
+                      'To match the Lv sort in the game, use Lv → Ship order asc → ID asc.')),
               children: [
                 for (final (index, key) in _sortKeys.indexed) ...[
                   CupertinoListTile(
@@ -252,7 +256,7 @@ class _KancolleShipFilterEditorState extends State<KancolleShipFilterEditor> {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             onPressed: () async {
               final stat = await showShipFilterPicker<ShipStat>(context,
-                  title: repairText('条件にする値', 'Value'), options: ShipStat.values, label: (e) => e.label);
+                  title: repairText('条件にする値', 'Value'), options: ShipStat.conditionStats, label: (e) => e.label);
               if (stat != null) setState(() => condition.stat = stat);
             },
             child: Text(condition.stat.label),

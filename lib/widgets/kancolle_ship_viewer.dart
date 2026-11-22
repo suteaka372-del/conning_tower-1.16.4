@@ -71,6 +71,17 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
 
   List<Ship>? ships;
 
+  /// 艦の種類の ID → ゲームの母港ソート順 (フィルターの「艦娘順」用)。ゲームのデータが変わったときだけ作り直す
+  Map<int, int> _shipOrder = const {};
+  Object? _shipOrderSource;
+
+  void _updateShipOrder(KancolleData data) {
+    final info = data.dataInfo.shipInfo;
+    if (identical(info, _shipOrderSource)) return;
+    _shipOrderSource = info;
+    _shipOrder = shipOrderOf(info?.values);
+  }
+
   ShipSort get shipSort => _store.shipSort;
   set shipSort(ShipSort value) => _store.shipSort = value;
 
@@ -324,6 +335,7 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
   Widget build(BuildContext context) {
     final data = watchKancolleData(ref, context);
     ships = data.fleet.ships;
+    _updateShipOrder(data);
     updateShipTypeMap(data);
     sortShips();
     log("shipTypeMap: $shipTypeMap");
@@ -623,7 +635,7 @@ class _KancolleShipViewerState extends ConsumerState<KancolleShipViewer> {
     }
     final preset = activePreset;
     if (preset != null) {
-      filterShips = preset.apply(filterShips);
+      filterShips = preset.apply(filterShips, shipOrder: _shipOrder);
     }
     return filterShips;
   }
